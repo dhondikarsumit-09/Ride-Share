@@ -1,0 +1,78 @@
+services:
+  mailpit:
+    image: "axllent/mailpit:v1.27"
+    restart: always
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  redis:
+    image: "redis:7-alpine"
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgresdb:
+    image: "postgis/postgis:16-3.4"
+    restart: always
+    env_file:
+      - .env.aws
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rideshare}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-rideshare}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - .env.aws
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgresdb:5432/${POSTGRES_DB:-rideshare}"
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-postgres}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST:-redis}
+      SPRING_DATA_REDIS_PORT: ${SPRING_DATA_REDIS_PORT:-6379}
+      SPRING_DATA_REDIS_PASSWORD: ${SPRING_DATA_REDIS_PASSWORD:-}
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_USERNAME: ${MAIL_USERNAME:-mailpit}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-mailpit}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
+      MAIL_SMTP_STARTTLS_ENABLE: ${MAIL_SMTP_STARTTLS_ENABLE:-false}
+      MAIL_OTP_ENABLED: ${MAIL_OTP_ENABLED:-true}
+      MAIL_SKIP_IF_NO_SMTP_HOST: ${MAIL_SKIP_IF_NO_SMTP_HOST:-false}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-noreply@ridesharelive.local}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-RideShare Live}
+      AUTH_SIGNUP_OTP_EXPOSE_DEV_OTP: ${AUTH_SIGNUP_OTP_EXPOSE_DEV_OTP:-true}
+    depends_on:
+      mailpit:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      postgresdb:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
