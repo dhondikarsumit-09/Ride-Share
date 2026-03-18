@@ -19,7 +19,7 @@ import javax.crypto.SecretKey;
 @Component
 public class JwtUtil {
 
-    @Value("${app.jwt.secret:replace-with-very-long-secret-key-min-32-chars-change-this-now}")
+    @Value("${app.jwt.secret:}")
     private String secret;
 
     @Value("${app.jwt.access-expiration-ms:900000}")
@@ -32,6 +32,12 @@ public class JwtUtil {
 
     @PostConstruct
     public void init() {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("APP_JWT_SECRET must be set before starting the backend.");
+        }
+        if (secret.length() < 32) {
+            throw new IllegalStateException("APP_JWT_SECRET must be at least 32 characters long.");
+        }
         key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 

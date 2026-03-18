@@ -1,12 +1,25 @@
-const defaultApiBase =
-  typeof window !== "undefined"
+const isBrowser = typeof window !== "undefined";
+const defaultApiBase = import.meta.env.DEV
+  ? isBrowser
     ? `http://${window.location.hostname || "127.0.0.1"}:8080`
-    : "http://127.0.0.1:8080";
+    : "http://127.0.0.1:8080"
+  : isBrowser
+    ? window.location.origin
+    : "";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || defaultApiBase)
   .trim()
   .replace(/\/+$/, "");
 export const API_BASE_URL = API_BASE;
+
+function clearStoredSession(notify = false) {
+  localStorage.removeItem("token");
+  localStorage.removeItem("refreshToken");
+
+  if (notify && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("rideshare:session-expired"));
+  }
+}
 
 function getApiBaseCandidates(apiBase) {
   const candidates = [apiBase];
@@ -126,8 +139,7 @@ export async function apiRequest(path, method = "GET", body = null, token = null
           const retryHeaders = { ...headers, Authorization: `Bearer ${nextAccessToken}` };
           response = await requestAtBase(baseUrl, cleanedPath, method, retryHeaders, body);
         } else {
-          localStorage.removeItem("token");
-          localStorage.removeItem("refreshToken");
+          clearStoredSession(true);
         }
       }
       break;
@@ -137,16 +149,13 @@ export async function apiRequest(path, method = "GET", body = null, token = null
   }
 
   if (!response) {
-    throw new Error(
-      `Unable to connect to backend at ${API_BASE_CANDIDATES.join(" or ")}. Start backend server on port 8080 and try again.`
-    );
+    throw new Error(`Unable to connect to backend at ${API_BASE_CANDIDATES.join(" or ")}.`);
   }
 
   const payload = await readResponseBody(response);
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("refreshToken");
+    if ((response.status === 401 || response.status === 403) && Boolean(headers.Authorization)) {
+      clearStoredSession(true);
       throw new Error("Session expired. Please login again.");
     }
     if (typeof payload === "string" && payload.trim()) {

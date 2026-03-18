@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.example.backend.entity.Ride;
 import com.example.backend.entity.User;
 import com.example.backend.service.DriverLocationCacheService;
+import com.example.backend.service.RidePredictiveInsightsService;
 import com.example.backend.service.RideService;
 import com.example.backend.service.UserService;
 
@@ -31,6 +32,8 @@ public class RideController {
     private UserService userService;
     @Autowired
     private DriverLocationCacheService driverLocationCacheService;
+    @Autowired
+    private RidePredictiveInsightsService ridePredictiveInsightsService;
 
     @PostMapping("/book")
     public ResponseEntity<?> bookRide(@RequestBody Ride ride, @AuthenticationPrincipal UserDetails userDetails) {
@@ -104,6 +107,12 @@ public class RideController {
         } catch (Exception cacheError) {
             return ResponseEntity.ok(List.of());
         }
+    }
+
+    @GetMapping("/insights/predictive")
+    public ResponseEntity<?> getPredictiveInsights(@AuthenticationPrincipal UserDetails userDetails) {
+        userService.findByEmail(userDetails.getUsername()).orElseThrow();
+        return ResponseEntity.ok(ridePredictiveInsightsService.generateInsights());
     }
 
     @PostMapping("/feedback/{rideId}")

@@ -13,17 +13,22 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
+    private final AppSecurityProperties appSecurityProperties;
 
-    public WebSocketConfig(WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor) {
+    public WebSocketConfig(
+            WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor,
+            AppSecurityProperties appSecurityProperties
+    ) {
         this.webSocketAuthChannelInterceptor = webSocketAuthChannelInterceptor;
+        this.appSecurityProperties = appSecurityProperties;
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns(appSecurityProperties.getNormalizedCorsAllowedOriginPatterns().toArray(String[]::new));
         registry.addEndpoint("/ws-sockjs")
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(appSecurityProperties.getNormalizedCorsAllowedOriginPatterns().toArray(String[]::new))
                 .withSockJS();
     }
 

@@ -1284,6 +1284,22 @@ export default function App() {
     }
   }, [showAuth, showSettings]);
 
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setSession(INITIAL_SESSION);
+      setPreferredRole(session.role === "DRIVER" ? "DRIVER" : "RIDER");
+      setAuthMode("login");
+      setShowAuth(true);
+      setShowSettings(false);
+      setShowHeaderMenu(false);
+      setUserSettingsPrefix("");
+      hasLoadedRemoteSettingsRef.current = false;
+    };
+
+    window.addEventListener("rideshare:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("rideshare:session-expired", handleSessionExpired);
+  }, [session.role]);
+
   const openAuthModal = (mode = "login", role = "RIDER") => {
     setPreferredRole(role === "DRIVER" ? "DRIVER" : "RIDER");
     setAuthMode(mode);
@@ -1604,7 +1620,7 @@ export default function App() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 14, scale: 0.97 }}
                 transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                className="auth-shell w-full max-w-xl"
+                className="auth-shell w-full max-w-lg"
                 onClick={(event) => event.stopPropagation()}
               >
                 <button

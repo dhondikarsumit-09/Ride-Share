@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "../api";
 import CountUpNumber from "../components/CountUpNumber";
 import LiveUpdateToast from "../components/LiveUpdateToast";
+import PredictiveInsightsPanel from "../components/PredictiveInsightsPanel";
 import RideFeedbackPanel from "../components/RideFeedbackPanel";
 import LiveMapPanel from "../components/LiveMapPanel";
 import RideHistory from "../components/RideHistory";
@@ -154,6 +155,7 @@ export default function DriverDashboard() {
   const [myHistory, setMyHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [predictiveInsights, setPredictiveInsights] = useState(null);
   const [busyRideId, setBusyRideId] = useState(null);
   const [otpByRide, setOtpByRide] = useState({});
   const [cancelReasonByRide, setCancelReasonByRide] = useState({});
@@ -182,11 +184,18 @@ export default function DriverDashboard() {
     setLoading(true);
     setError("");
     try {
-      const [activeResponse, historyResponse] = await Promise.all([
+      const [activeResult, historyResult, insightsResult] = await Promise.allSettled([
         apiRequest("/rides/requested", "GET", null, token),
         apiRequest("/rides/history", "GET", null, token),
+        apiRequest("/rides/insights/predictive", "GET", null, token),
       ]);
 
+      if (activeResult.status === "rejected" && historyResult.status === "rejected") {
+        throw activeResult.reason || historyResult.reason;
+      }
+
+      const activeResponse = activeResult.status === "fulfilled" ? activeResult.value : [];
+      const historyResponse = historyResult.status === "fulfilled" ? historyResult.value : [];
       const activeList = Array.isArray(activeResponse) ? activeResponse : [];
       const historyList = Array.isArray(historyResponse) ? historyResponse : [];
       const myCompletedHistory = historyList.filter(
@@ -195,7 +204,9 @@ export default function DriverDashboard() {
 
       setActiveRides(activeList.length > 0 ? activeList : buildDummyRides());
       setMyHistory(myCompletedHistory.length > 0 ? myCompletedHistory : buildDummyCompletedHistory(myUserId));
+      setPredictiveInsights(insightsResult.status === "fulfilled" ? insightsResult.value : null);
     } catch (requestError) {
+      setPredictiveInsights(null);
       setError(requestError.message || "Failed to load driver rides.");
     } finally {
       setLoading(false);
@@ -785,6 +796,8 @@ export default function DriverDashboard() {
       {error && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{error}</div>
       )}
+
+      <PredictiveInsightsPanel insights={predictiveInsights} loading={loading} />
 
       <section className="grid gap-6 lg:grid-cols-2" data-reveal>
         <article className="glass-panel map-motion-panel p-6 sm:p-8" data-reveal>
