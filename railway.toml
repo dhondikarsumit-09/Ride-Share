@@ -1,7 +1,10 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile.railway-backend"
-watchPatterns = ["ridesharelive-backend-main/**"]
+watchPatterns = [
+  "Dockerfile.railway-backend",
+  "ridesharelive-backend-main/**",
+]
 
 [deploy]
 healthcheckPath = "/health"

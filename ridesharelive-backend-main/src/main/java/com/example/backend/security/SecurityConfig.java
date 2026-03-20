@@ -42,8 +42,14 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http, Jwtfilter jwtfilter) throws Exception {
         List<String> publicPaths = new ArrayList<>(List.of(
                 "/",
+                "/index.html",
+                "/assets/**",
+                "/favicon.ico",
+                "/vite.svg",
                 "/health",
+                "/api/status",
                 "/auth/**",
+                "/payments/verify-session/**",
                 "/ws/**",
                 "/ws-sockjs/**",
                 "/rides/estimate",
