@@ -25,6 +25,12 @@ public class SignupOtpService {
     @Autowired
     private OtpEmailService otpEmailService;
 
+    @Autowired
+    private ResendOtpEmailService resendOtpEmailService;
+
+    @Value("${app.mail.provider:smtp}")
+    private String mailProvider;
+
     @Value("${app.auth.signup-otp.enabled:true}")
     private boolean signupOtpEnabled;
 
@@ -58,8 +64,13 @@ public class SignupOtpService {
         );
         pendingOtps.put(normalizedEmail, nextOtp);
 
-        OtpEmailService.MailDeliveryResult mailDeliveryResult =
-                otpEmailService.sendSignupOtpEmail(nextOtp.name(), normalizedEmail, otp);
+        OtpEmailService.MailDeliveryResult mailDeliveryResult;
+        if ("resend".equalsIgnoreCase(mailProvider)) {
+            ResendOtpEmailService.MailDeliveryResult resendResult = resendOtpEmailService.sendSignupOtpEmail(nextOtp.name(), normalizedEmail, otp);
+            mailDeliveryResult = new OtpEmailService.MailDeliveryResult(resendResult.sent(), resendResult.message());
+        } else {
+            mailDeliveryResult = otpEmailService.sendSignupOtpEmail(nextOtp.name(), normalizedEmail, otp);
+        }
         boolean emailSent = mailDeliveryResult.sent();
         String devOtp = exposeDevOtp ? otp : null;
         IssueResult result = IssueResult.issued(emailSent, devOtp, nextOtp.expiresAt(), mailDeliveryResult.message());

@@ -5,9 +5,9 @@ import { formatPaymentModeLabel } from "../utils/paymentPresentation";
 
 const RIDE_TYPES = [
   { id: "economy", label: "Economy", surcharge: 0 },
-  { id: "comfort", label: "Comfort", surcharge: 50 },
-  { id: "xl", label: "XL", surcharge: 150 },
-  { id: "premium", label: "Premium", surcharge: 200 },
+  { id: "comfort", label: "Comfort", surcharge: 25 },
+  { id: "xl", label: "XL", surcharge: 50 },
+  { id: "premium", label: "Premium", surcharge: 75 },
 ];
 
 const PAYMENT_OPTIONS = [
@@ -253,19 +253,32 @@ export default function RideBookingForm({
         const effectiveRideTypeId =
           calculatedDistance > ECONOMY_MAX_DISTANCE_KM && rideTypeId === "economy" ? "comfort" : rideTypeId;
         let estimatedFare = buildSimpleFare(calculatedDistance, effectiveRideTypeId);
+        let resolvedDistanceKm = calculatedDistance;
         let etaRange = "";
         try {
+          const params = new URLSearchParams({
+            distanceKm: calculatedDistance.toFixed(2),
+            rideType: effectiveRideTypeId,
+            pickupLat: String(pickupCoordinate.lat),
+            pickupLon: String(pickupCoordinate.lon),
+            dropLat: String(dropCoordinate.lat),
+            dropLon: String(dropCoordinate.lon),
+          });
           const estimate = await apiRequest(
-            `/rides/estimate?distanceKm=${encodeURIComponent(calculatedDistance.toFixed(2))}&rideType=${encodeURIComponent(effectiveRideTypeId)}`
+            `/rides/estimate?${params.toString()}`
           );
           const apiFare = Number(estimate?.estimatedFare);
           const etaMin = Number(estimate?.etaMinMinutes);
           const etaMax = Number(estimate?.etaMaxMinutes);
+          const apiDistance = Number(estimate?.distanceKm);
           if (Number.isFinite(apiFare)) {
             estimatedFare = apiFare;
           }
           if (Number.isFinite(etaMin) && Number.isFinite(etaMax)) {
             etaRange = `${etaMin}-${etaMax} min`;
+          }
+          if (Number.isFinite(apiDistance) && apiDistance > 0) {
+            resolvedDistanceKm = apiDistance;
           }
         } catch {
           const etaMinutes = Math.max(6, Math.round((calculatedDistance / 28) * 60) + 4);
@@ -273,7 +286,7 @@ export default function RideBookingForm({
         }
 
         if (!cancelled) {
-          setDistanceKm(calculatedDistance);
+          setDistanceKm(resolvedDistanceKm);
           setFareEstimate(estimatedFare);
           setEtaText(etaRange);
         }
@@ -633,7 +646,7 @@ export default function RideBookingForm({
             {fareEstimate ? `INR ${toInr(fareEstimate)}` : "Enter valid pickup and destination"}
           </p>
           <p className="mt-1 text-xs font-semibold text-slate-500">
-            Fare rule: INR 60 base, +INR 50 every 40 km, +INR 50 on every ride, plus ride type surcharge.
+            Fare rule: routed distance + time fare with Rapido-style slabs, night fare support, and flexi-fare backend options.
           </p>
           {distanceKm && (
             <p className="mt-1 text-sm text-slate-600">

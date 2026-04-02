@@ -1,18 +1,42 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "./api";
 
+function normalizeDefaultRole(role) {
+  if (role === "ADMIN" || role === "DRIVER" || role === "RIDER") {
+    return role;
+  }
+  if (role === "USER") {
+    return "RIDER";
+  }
+  return "RIDER";
+}
+
+const publicAdminAccessEnabled =
+  String(import.meta.env.VITE_ENABLE_PUBLIC_ADMIN_ACCESS || "").toLowerCase() === "true" || import.meta.env.DEV;
+
+function getRoleBadge(role) {
+  if (role === "RIDER") {
+    return "R";
+  }
+  if (role === "DRIVER") {
+    return "D";
+  }
+  return "A";
+}
+
 export default function Login({ onLogin, labels = {}, defaultRole = "RIDER" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState(defaultRole === "DRIVER" ? "DRIVER" : "RIDER");
+  const [role, setRole] = useState(normalizeDefaultRole(defaultRole));
   const [askLocation, setAskLocation] = useState(true);
   const [error, setError] = useState("");
   const [locationError, setLocationError] = useState("");
   const [loading, setLoading] = useState(false);
   const copy = {
     role: "Login as",
-    rider: "Rider",
+    rider: "Passenger",
     driver: "Driver",
+    admin: "Admin",
     locationPermission: "Ask for live location access",
     useLocationNow: "Use live location now",
     locationDenied: "Location permission denied. You can continue without it.",
@@ -24,7 +48,8 @@ export default function Login({ onLogin, labels = {}, defaultRole = "RIDER" }) {
   };
   const roleCards = [
     { value: "RIDER", label: copy.rider, hint: "Book your next trip" },
-    { value: "DRIVER", label: copy.driver, hint: "Go online and earn" },
+    { value: "DRIVER", label: copy.driver, hint: "Accept rides and go online" },
+    ...(publicAdminAccessEnabled ? [{ value: "ADMIN", label: copy.admin, hint: "Monitor ops and payouts" }] : []),
   ];
 
   const requestLiveLocation = () =>
@@ -56,7 +81,7 @@ export default function Login({ onLogin, labels = {}, defaultRole = "RIDER" }) {
     });
 
   useEffect(() => {
-    setRole(defaultRole === "DRIVER" ? "DRIVER" : "RIDER");
+    setRole(normalizeDefaultRole(defaultRole));
   }, [defaultRole]);
 
   const handleSubmit = async (event) => {
@@ -70,13 +95,21 @@ export default function Login({ onLogin, labels = {}, defaultRole = "RIDER" }) {
       }
 
       const payload = await apiRequest("/auth/login", "POST", { email, password, role });
+      const serverRole = String(payload.role || "").toUpperCase();
+      const effectiveRole =
+        role === "ADMIN" || role === "DRIVER"
+          ? role
+          : serverRole === "USER"
+            ? "RIDER"
+            : serverRole || role;
       const accessToken = payload.accessToken || payload.token || "";
       localStorage.setItem("token", accessToken);
       localStorage.setItem("refreshToken", payload.refreshToken || "");
-      localStorage.setItem("role", payload.role || "");
+      localStorage.setItem("role", effectiveRole);
       localStorage.setItem("name", payload.name || "");
       localStorage.setItem("userId", String(payload.id || ""));
-      onLogin?.(payload);
+      localStorage.setItem("email", payload.email || email.trim());
+      onLogin?.({ ...payload, role: effectiveRole });
     } catch (requestError) {
       setError(requestError.message || "Unable to login.");
     } finally {
@@ -153,7 +186,7 @@ export default function Login({ onLogin, labels = {}, defaultRole = "RIDER" }) {
             className={`auth-role-card ${role === item.value ? "auth-role-card--active" : ""}`}
             onClick={() => setRole(item.value)}
           >
-            <span className="auth-role-card__badge">{item.value === "RIDER" ? "R" : "D"}</span>
+            <span className="auth-role-card__badge">{getRoleBadge(item.value)}</span>
             <span className="auth-role-card__copy">
               <strong>{item.label}</strong>
               <small>{item.hint}</small>

@@ -41,6 +41,7 @@ function getApiBaseCandidates(apiBase) {
 }
 
 const API_BASE_CANDIDATES = getApiBaseCandidates(API_BASE);
+const REQUEST_TIMEOUT_MS = 12000;
 
 async function readResponseBody(response) {
   if (response.status === 204) {
@@ -61,11 +62,24 @@ async function readResponseBody(response) {
 }
 
 async function requestAtBase(baseUrl, cleanedPath, method, headers, body) {
-  return fetch(`${baseUrl}${cleanedPath}`, {
-    method: method.toUpperCase(),
-    headers,
-    body: body !== null ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(`${baseUrl}${cleanedPath}`, {
+      method: method.toUpperCase(),
+      headers,
+      body: body !== null ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`);
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
 }
 
 async function tryRefreshAccessToken(baseUrl) {

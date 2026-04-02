@@ -1,0 +1,103 @@
+import { motion } from "motion/react";
+
+const DATE_RANGES = ["Today", "Week", "Month"];
+
+export default function AdminHeader({
+  searchValue,
+  onSearchChange,
+  dateRange,
+  onDateRangeChange,
+  alertsOnly,
+  onToggleAlerts,
+  isDark = true,
+  title = "Platform overview",
+  subtitle = "Operations dashboard",
+  breadcrumbs = ["Admin", "Overview"],
+  systemStatus = "System healthy",
+  onExport,
+  onToggleSidebar,
+}) {
+  return (
+    <motion.header
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24 }}
+      className={`sticky top-3 z-20 rounded-[2rem] border p-5 shadow-[0_24px_60px_rgba(15,23,42,0.16)] backdrop-blur ${isDark ? "border-slate-800 bg-slate-950/92" : "border-slate-200 bg-white/96"}`}
+    >
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            {onToggleSidebar ? (
+              <button type="button" onClick={onToggleSidebar} className={`rounded-full border px-3 py-2 text-xs font-semibold ${isDark ? "border-slate-700 text-slate-300 xl:hidden" : "border-slate-200 text-slate-600 xl:hidden"}`}>
+                Menu
+              </button>
+            ) : null}
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-slate-400" : "text-slate-500"}`}>{breadcrumbs.join(" / ")}</p>
+          </div>
+          <div>
+            <h1 className={`text-3xl font-semibold ${isDark ? "text-slate-50" : "text-slate-900"}`}>{title}</h1>
+            <p className={`mt-1 text-sm ${isDark ? "text-slate-400" : "text-slate-600"}`}>{subtitle}</p>
+          </div>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_auto_auto_auto] lg:items-center">
+          <input
+            value={searchValue}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search riders, drivers, rides, payouts"
+            className={`rounded-[1.2rem] border px-4 py-3 text-sm outline-none transition ${isDark ? "border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400/50" : "border-slate-200 bg-slate-50 text-slate-900 focus:border-sky-300"}`}
+          />
+          <div className="flex flex-wrap gap-2">
+            {DATE_RANGES.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => onDateRangeChange(item)}
+                className={`rounded-[1.2rem] border px-4 py-3 text-sm font-semibold transition ${
+                  dateRange === item
+                    ? isDark
+                      ? "border-cyan-400/40 bg-cyan-400/12 text-cyan-200"
+                      : "border-sky-200 bg-sky-50 text-sky-700"
+                    : isDark
+                      ? "border-slate-700 bg-slate-900 text-slate-200"
+                      : "border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={onToggleAlerts}
+            className={`relative rounded-[1.2rem] border px-4 py-3 text-sm font-semibold transition ${
+              alertsOnly
+                ? isDark
+                  ? "border-amber-400/40 bg-amber-400/12 text-amber-200"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+                : isDark
+                  ? "border-slate-700 bg-slate-900 text-slate-200"
+                  : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}
+          >
+            Alerts
+            <motion.span
+              animate={{ scale: [1, 1.15, 1], opacity: [0.75, 1, 0.75] }}
+              transition={{ duration: 1.8, repeat: Infinity }}
+              className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-amber-400"
+            />
+          </button>
+          <div className="flex items-center gap-3">
+            {onExport ? (
+              <button type="button" onClick={onExport} className={`rounded-[1.2rem] border px-4 py-3 text-sm font-semibold ${isDark ? "border-slate-700 bg-slate-900 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                Export CSV
+              </button>
+            ) : null}
+            <div className={`rounded-[1.2rem] border px-4 py-3 text-sm font-semibold ${isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+              {systemStatus}
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.header>
+  );
+}

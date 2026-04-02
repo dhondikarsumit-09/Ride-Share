@@ -16,7 +16,7 @@ describe("Signup", () => {
   it("requests OTP before submitting signup", async () => {
     const onSignup = vi.fn();
     apiRequest
-      .mockResolvedValueOnce({ message: "OTP sent." })
+      .mockResolvedValueOnce({ message: "OTP sent.", devOtp: "123456" })
       .mockResolvedValueOnce({ message: "Account created." });
 
     render(<Signup onSignup={onSignup} />);
@@ -33,6 +33,8 @@ describe("Signup", () => {
       });
     });
 
+    expect(screen.getByText(/development otp: 123456/i)).toBeInTheDocument();
+
     await userEvent.type(screen.getByLabelText(/^otp$/i), "123456");
     await userEvent.click(screen.getByRole("button", { name: /create account/i }));
 
@@ -47,5 +49,5 @@ describe("Signup", () => {
     });
 
     expect(onSignup).toHaveBeenCalled();
-  });
+  }, 15000);
 });

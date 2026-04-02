@@ -3,7 +3,7 @@ package com.example.backend.dto.payment;
 import lombok.Data;
 
 @Data
-public class CreateCheckoutSessionRequest {
+public class CreatePaymentSessionRequest {
     private Integer amountInInr;
     private String rideSummary;
     private String paymentMode;

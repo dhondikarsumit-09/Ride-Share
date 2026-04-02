@@ -1,6 +1,8 @@
 package com.example.backend.service;
 
+import java.time.LocalTime;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
@@ -12,27 +14,37 @@ import org.springframework.stereotype.Service;
 import com.example.backend.entity.Ride;
 import com.example.backend.entity.User;
 import com.example.backend.repository.RideRepository;
+import com.example.backend.repository.UserRepository;
 
 @Service
 public class RideService {
 
-    private static final double BASE_FARE_INR = 60;
-    private static final double FARE_STEP_KM = 40;
-    private static final double FARE_STEP_INR = 50;
-    private static final double PLATFORM_SURCHARGE_INR = 50;
-    private static final double ECONOMY_MAX_DISTANCE_KM = 80;
-    private static final Map<String, Integer> RIDE_SURCHARGES = Map.of(
-            "ECONOMY", 0,
-            "COMFORT", 50,
-            "XL", 150,
-            "PREMIUM", 200,
-            "BIKE", -20,
-            "MINI", 0,
-            "SEDAN", 120
+    private static final int MAX_WAITING_CHARGE_INR = 20;
+    private static final int FREE_WAITING_MINUTES = 3;
+    private static final double WAITING_CHARGE_PER_MINUTE_INR = 1.0;
+    private static final Map<String, FareProfile> FARE_PROFILES = Map.of(
+            "BIKE", new FareProfile("bike", 12.0, 6.3, 8.4, 0.22, 1.00),
+            "AUTO", new FareProfile("auto", 20.0, 10.0, 12.0, 0.50, 1.00),
+            "CAR", new FareProfile("car", 50.0, 12.0, 15.0, 1.00, 1.00),
+            "COMFORT", new FareProfile("car", 50.0, 12.0, 15.0, 1.00, 1.08),
+            "PREMIUM", new FareProfile("car", 50.0, 12.0, 15.0, 1.00, 1.18),
+            "XL", new FareProfile("car", 50.0, 12.0, 15.0, 1.00, 1.30),
+            "ECONOMY", new FareProfile("auto", 20.0, 10.0, 12.0, 0.50, 1.00),
+            "MINI", new FareProfile("auto", 20.0, 10.0, 12.0, 0.50, 0.96),
+            "SEDAN", new FareProfile("car", 50.0, 12.0, 15.0, 1.00, 1.10)
+    );
+    private static final Map<String, Integer> FLEXI_FARE_INCREMENTS = Map.of(
+            "standard", 0,
+            "+15", 15,
+            "+30", 30,
+            "+50", 50
     );
 
     @Autowired
     private RideRepository rideRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     @Autowired
     private NotificationService notificationService;
@@ -42,6 +54,9 @@ public class RideService {
 
     @Autowired
     private DriverLocationCacheService driverLocationCacheService;
+
+    @Autowired
+    private RouteEstimationService routeEstimationService;
 
     public Ride bookRide(Ride ride) {
         normalizePaymentState(ride);
@@ -99,17 +114,19 @@ public class RideService {
         return rideRepository.findAll().stream()
                 .filter(r -> (r.getRiderId() != null && r.getRiderId().equals(user.getId()))
                 || (r.getDriverId() != null && r.getDriverId().equals(user.getId())))
+                .map(this::enrichRideContacts)
                 .toList();
     }
 
     public List<Ride> getRequestedRides() {
         return rideRepository.findAll().stream()
                 .filter(r -> r.getStatus() != Ride.Status.COMPLETED && r.getStatus() != Ride.Status.CANCELLED)
+                .map(this::enrichRideContacts)
                 .toList();
     }
 
     public Ride getRideById(Long rideId) {
-        return rideRepository.findById(rideId).orElse(null);
+        return rideRepository.findById(rideId).map(this::enrichRideContacts).orElse(null);
     }
 
     public Ride submitFeedback(Long rideId, User user, Integer rating, String comment) {
@@ -197,34 +214,56 @@ public class RideService {
         return cancelledRide;
     }
 
-    public Map<String, Object> estimateRide(Double distanceKm, String rideType) {
+    public Map<String, Object> estimateRide(
+            Double distanceKm,
+            String rideType,
+            Double pickupLat,
+            Double pickupLon,
+            Double dropLat,
+            Double dropLon,
+            String routePreference
+    ) {
         if (distanceKm == null || !Double.isFinite(distanceKm) || distanceKm <= 0) {
             throw new IllegalArgumentException("distanceKm must be a positive number.");
         }
 
         String normalizedType = normalizeRideType(rideType);
-        double safeDistance = Math.max(0, distanceKm);
-        String effectiveType =
-                ("ECONOMY".equals(normalizedType) && safeDistance > ECONOMY_MAX_DISTANCE_KM) ? "COMFORT" : normalizedType;
+        FareProfile fareProfile = FARE_PROFILES.getOrDefault(normalizedType, FARE_PROFILES.get("AUTO"));
 
-        int surcharge = RIDE_SURCHARGES.getOrDefault(effectiveType, 0);
-        double slabs = Math.floor(safeDistance / FARE_STEP_KM);
-        double fare = BASE_FARE_INR + slabs * FARE_STEP_INR + PLATFORM_SURCHARGE_INR + surcharge;
-        int roundedFare = (int) Math.max(49, Math.round(fare));
+        RouteEstimationService.RouteSnapshot route = routeEstimationService.resolveRoute(pickupLat, pickupLon, dropLat, dropLon, routePreference);
+        if (route == null) {
+            route = routeEstimationService.buildFallbackRoute(pickupLat, pickupLon, dropLat, dropLon, distanceKm);
+        }
 
-        int etaMin = Math.max(6, (int) Math.round((safeDistance / speedForRideType(effectiveType)) * 60) + 4);
-        int etaMax = etaMin + 5;
+        double effectiveDistanceKm = route == null ? Math.max(0, distanceKm) : route.distanceKm();
+        double effectiveDurationMinutes = route == null
+                ? Math.max(4.0, (effectiveDistanceKm / speedForRideType(normalizedType)) * 60.0)
+                : route.durationMin();
+        FareBreakdown fareBreakdown = calculateFare(effectiveDistanceKm, effectiveDurationMinutes, fareProfile);
 
-        return Map.of(
-                "distanceKm", Math.round(safeDistance * 10.0) / 10.0,
-                "rideType", effectiveType.toLowerCase(Locale.ROOT),
-                "estimatedFare", roundedFare,
-                "fareMin", Math.max(49, roundedFare - 20),
-                "fareMax", roundedFare + 35,
-                "etaMinMinutes", etaMin,
-                "etaMaxMinutes", etaMax,
-                "currency", "INR"
-        );
+        int etaMin = Math.max(4, (int) Math.floor(effectiveDurationMinutes));
+        int etaMax = Math.max(etaMin + 3, (int) Math.ceil(effectiveDurationMinutes * 1.12));
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("distanceKm", roundOneDecimal(effectiveDistanceKm));
+        payload.put("durationMinutes", roundOneDecimal(effectiveDurationMinutes));
+        payload.put("rideType", normalizedType.toLowerCase(Locale.ROOT));
+        payload.put("vehicleCategory", fareProfile.category());
+        payload.put("estimatedFare", fareBreakdown.totalFare());
+        payload.put("fareMin", fareBreakdown.totalFare());
+        payload.put("fareMax", fareBreakdown.totalFare() + 50);
+        payload.put("etaMinMinutes", etaMin);
+        payload.put("etaMaxMinutes", etaMax);
+        payload.put("baseFare", roundTwoDecimals(fareBreakdown.baseFare()));
+        payload.put("distanceFare", roundTwoDecimals(fareBreakdown.distanceFare()));
+        payload.put("timeFare", roundTwoDecimals(fareBreakdown.timeFare()));
+        payload.put("waitingCharge", fareBreakdown.waitingCharge());
+        payload.put("nightCharge", roundTwoDecimals(fareBreakdown.nightCharge()));
+        payload.put("currency", "INR");
+        payload.put("routeProvider", route == null ? "distance-only" : route.provider());
+        payload.put("path", route == null ? List.of() : route.path());
+        payload.put("flexiFares", buildFlexiFares(fareBreakdown.totalFare()));
+        return payload;
     }
 
     private static String generateOtp() {
@@ -232,19 +271,86 @@ public class RideService {
         return String.valueOf(value);
     }
 
+    private Ride enrichRideContacts(Ride ride) {
+        if (ride == null || ride.getRiderId() == null) {
+            return ride;
+        }
+
+        userRepository.findById(ride.getRiderId()).ifPresent(rider -> {
+            ride.setRiderName(rider.getName());
+            ride.setRiderEmail(rider.getEmail());
+        });
+        return ride;
+    }
+
     private static String normalizeRideType(String rideType) {
         if (rideType == null || rideType.isBlank()) {
-            return "ECONOMY";
+            return "AUTO";
         }
-        return rideType.trim().toUpperCase(Locale.ROOT);
+        String normalized = rideType.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "BIKE" -> "BIKE";
+            case "AUTO", "ECONOMY", "MINI" -> normalized;
+            case "CAR", "COMFORT", "PREMIUM", "XL", "SEDAN" -> normalized;
+            default -> "AUTO";
+        };
     }
 
     private static double speedForRideType(String rideType) {
         return switch (rideType) {
-            case "BIKE" -> 32;
-            case "SEDAN", "PREMIUM", "XL" -> 24;
-            default -> 28;
+            case "BIKE" -> 30;
+            case "XL", "PREMIUM", "SEDAN", "CAR", "COMFORT" -> 24;
+            default -> 26;
         };
+    }
+
+    private static FareBreakdown calculateFare(double distanceKm, double durationMinutes, FareProfile fareProfile) {
+        double normalizedDistanceKm = Math.max(0.0, distanceKm);
+        double normalizedDurationMinutes = Math.max(0.0, durationMinutes);
+
+        double distanceFare = normalizedDistanceKm <= 7.0
+                ? normalizedDistanceKm * fareProfile.distanceRate0To7()
+                : (7.0 * fareProfile.distanceRate0To7()) + ((normalizedDistanceKm - 7.0) * fareProfile.distanceRateAbove7());
+        double timeFare = normalizedDurationMinutes * fareProfile.timeRate();
+        int waitingCharge = calculateWaitingCharge(normalizedDurationMinutes);
+        double subtotal = (fareProfile.baseFare() + distanceFare + timeFare + waitingCharge) * fareProfile.multiplier();
+        double nightCharge = isNightFareWindow() ? subtotal * 0.40 : 0.0;
+        int totalFare = (int) Math.round(subtotal + nightCharge);
+
+        return new FareBreakdown(
+                fareProfile.baseFare(),
+                distanceFare * fareProfile.multiplier(),
+                timeFare * fareProfile.multiplier(),
+                waitingCharge,
+                nightCharge,
+                Math.max(1, totalFare)
+        );
+    }
+
+    private static int calculateWaitingCharge(double durationMinutes) {
+        int waitMinutes = (int) Math.max(0, Math.floor(durationMinutes) - FREE_WAITING_MINUTES);
+        return (int) Math.min(MAX_WAITING_CHARGE_INR, Math.round(waitMinutes * WAITING_CHARGE_PER_MINUTE_INR));
+    }
+
+    private static boolean isNightFareWindow() {
+        int hour = LocalTime.now().getHour();
+        return hour >= 23 || hour < 5;
+    }
+
+    private static List<Map<String, Object>> buildFlexiFares(int baseFare) {
+        return FLEXI_FARE_INCREMENTS.entrySet().stream()
+                .map(entry -> Map.<String, Object>of(
+                        "label", entry.getKey().equals("standard") ? "Standard" : entry.getKey(),
+                        "amount", baseFare + entry.getValue()))
+                .toList();
+    }
+
+    private static double roundOneDecimal(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    private static double roundTwoDecimals(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     private static void validateOtp(String expectedOtp, String providedOtp, String errorMessage) {
@@ -289,7 +395,7 @@ public class RideService {
             }
 
             try {
-                Map<String, Object> verification = paymentService.verifyCheckoutSession(paymentReference);
+                Map<String, Object> verification = paymentService.verifyPaymentSession(paymentReference);
                 boolean paid = Boolean.TRUE.equals(verification.get("paid"));
                 if (!paid) {
                     throw new IllegalArgumentException("Online payment is not completed.");
@@ -315,5 +421,25 @@ public class RideService {
         if (ride.getPaymentStatus() == null || ride.getPaymentStatus().isBlank()) {
             ride.setPaymentStatus("PENDING");
         }
+    }
+
+    private record FareProfile(
+            String category,
+            double baseFare,
+            double distanceRate0To7,
+            double distanceRateAbove7,
+            double timeRate,
+            double multiplier
+    ) {
+    }
+
+    private record FareBreakdown(
+            double baseFare,
+            double distanceFare,
+            double timeFare,
+            int waitingCharge,
+            double nightCharge,
+            int totalFare
+    ) {
     }
 }

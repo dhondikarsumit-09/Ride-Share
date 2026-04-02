@@ -1,5 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+function resolveMapTone(themeName) {
+  switch (themeName) {
+    case "dark-theme":
+      return "night";
+    case "ocean":
+    case "smart-mobility":
+      return "ocean";
+    case "forest":
+    case "eco-friendly-ride":
+    case "ola":
+    case "electric-mobility":
+      return "forest";
+    case "uber":
+    case "urban-transport":
+      return "graphite";
+    case "lyft":
+    case "friendly-community":
+      return "rose";
+    case "premium-ride":
+    case "rapido":
+    case "classic-taxi":
+      return "amber";
+    default:
+      return "amber";
+  }
+}
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -105,6 +132,15 @@ export default function LiveMapPanel({
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState("map");
   const [streetViewPoint, setStreetViewPoint] = useState(defaultIndiaCenter);
+  const [mapTone, setMapTone] = useState(() => resolveMapTone(document.documentElement.dataset.theme));
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setMapTone(resolveMapTone(document.documentElement.dataset.theme));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   const mapIframeSrc = useMemo(() => {
     const [minLon, minLat, maxLon, maxLat] = getBbox(center.lat, center.lon, zoom);
@@ -257,13 +293,18 @@ export default function LiveMapPanel({
   const handleMapView = () => setViewMode("map");
 
   return (
-    <section className={`glass-panel card-rise p-4 sm:p-6 ${className}`}>
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-2xl font-bold text-slate-900">{title}</h3>
-        <p className="text-sm font-semibold text-slate-600">{locationLabel}</p>
+    <section className={`glass-panel card-rise live-map-shell live-map-shell--${mapTone} p-4 sm:p-6 ${className}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Explore coverage</p>
+          <h3 className="mt-2 text-2xl font-bold text-slate-900">{title}</h3>
+        </div>
+        <div className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600">
+          {locationLabel}
+        </div>
       </div>
 
-      <div className="mt-4 flex flex-col gap-3 lg:flex-row">
+      <div className="mt-4 flex flex-col gap-3 xl:flex-row">
         <input
           type="text"
           value={searchQuery}
@@ -275,36 +316,47 @@ export default function LiveMapPanel({
             }
           }}
           placeholder={copy.searchPlaceholder}
-          className="w-full rounded-xl border border-sky-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-sky-300"
+          className="w-full rounded-2xl border border-sky-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-sky-300"
         />
-        <div className="flex shrink-0 gap-2">
-          <button type="button" className="btn-primary !rounded-xl !px-4 !py-3" onClick={handleUseMyLocation} disabled={loading}>
-            {copy.useMyLocation}
+        <div className="grid shrink-0 grid-cols-4 gap-2 sm:flex sm:flex-wrap">
+          <button type="button" className="live-map-shell__control live-map-shell__control--primary" onClick={handleUseMyLocation} disabled={loading} aria-label={copy.useMyLocation} title={copy.useMyLocation}>
+            <span aria-hidden="true">◎</span>
           </button>
-          <button type="button" className="btn-secondary !rounded-xl !px-4 !py-3" onClick={handleMapView}>
-            {copy.mapView}
+          <button type="button" className="live-map-shell__control" onClick={handleMapView} aria-label={copy.mapView} title={copy.mapView}>
+            <span aria-hidden="true">M</span>
           </button>
-          <button type="button" className="btn-secondary !rounded-xl !px-4 !py-3" onClick={handleStreetView}>
-            {copy.streetView}
+          <button type="button" className="live-map-shell__control" onClick={handleStreetView} aria-label={copy.streetView} title={copy.streetView}>
+            <span aria-hidden="true">S</span>
           </button>
-          <button type="button" className="btn-secondary !rounded-xl !px-4 !py-3" onClick={handleRecenter} disabled={loading}>
-            {copy.recenter}
+          <button type="button" className="live-map-shell__control" onClick={handleRecenter} disabled={loading} aria-label={copy.recenter} title={copy.recenter}>
+            <span aria-hidden="true">+</span>
           </button>
         </div>
       </div>
 
       {error && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
-      <div className="relative mt-4 overflow-hidden rounded-2xl border border-sky-200 bg-white">
+      <div className="live-map-shell__frame relative mt-4 overflow-hidden rounded-[1.8rem] border border-sky-200 bg-white">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap gap-2 p-3 sm:p-4">
+          <span className="rounded-full border border-white/60 bg-white/72 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-700 backdrop-blur">
+            India only
+          </span>
+          <span className="rounded-full border border-white/60 bg-white/72 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-700 backdrop-blur">
+            Search and zoom
+          </span>
+        </div>
+        {viewMode === "map" ? <div className="live-map-shell__map-tint pointer-events-none absolute inset-0 z-[1]" aria-hidden="true" /> : null}
         <iframe
           title={`${title} panel`}
           src={iframeSrc}
-          className="h-[68vh] min-h-[430px] w-full border-0"
+          className={`live-map-shell__iframe h-[54vh] min-h-[360px] w-full border-0 sm:min-h-[420px] ${
+            viewMode === "map" ? "live-map-shell__iframe--map" : "live-map-shell__iframe--street"
+          }`}
           loading="lazy"
           referrerPolicy="no-referrer-when-downgrade"
         />
         {viewMode !== "street" && (
-          <div className="absolute left-3 top-3 overflow-hidden rounded-md border border-slate-300 bg-white shadow">
+          <div className="absolute bottom-4 right-4 overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-lg">
             <button
               type="button"
               className="grid h-10 w-10 place-items-center border-b border-slate-300 text-xl font-semibold text-slate-700 transition hover:bg-slate-100"

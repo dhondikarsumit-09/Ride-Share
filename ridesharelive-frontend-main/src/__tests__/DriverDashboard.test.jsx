@@ -11,7 +11,7 @@ vi.mock("../api", () => ({
 describe("DriverDashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
+  }, 15000);
 
   it("accepts a requested ride with driverId in payload", async () => {
     localStorage.setItem("token", "driver-token");

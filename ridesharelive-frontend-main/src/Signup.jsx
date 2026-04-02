@@ -1,14 +1,64 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "./api";
 
+function normalizeDefaultRole(role) {
+  if (role === "ADMIN" || role === "DRIVER" || role === "RIDER") {
+    return role;
+  }
+  if (role === "USER") {
+    return "RIDER";
+  }
+  return "RIDER";
+}
+
+const publicAdminAccessEnabled =
+  String(import.meta.env.VITE_ENABLE_PUBLIC_ADMIN_ACCESS || "").toLowerCase() === "true" || import.meta.env.DEV;
+
+function getRoleBadge(role) {
+  if (role === "RIDER") {
+    return "R";
+  }
+  if (role === "DRIVER") {
+    return "D";
+  }
+  return "A";
+}
+
+function normalizeSignupError(message) {
+  const rawMessage = typeof message === "string" ? message.trim() : "";
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes("gmail rejected login") ||
+    normalized.includes("authentication failed") ||
+    normalized.includes("smtp") ||
+    normalized.includes("app password") ||
+    normalized.includes("mail_password") ||
+    normalized.includes("resend") ||
+    normalized.includes("mail server")
+  ) {
+    return {
+      tone: "config",
+      text: "OTP email delivery failed. Check the backend email provider configuration and sender setup, then resend OTP.",
+    };
+  }
+
+  return {
+    tone: "error",
+    text: rawMessage || "Unable to signup.",
+  };
+}
+
 export default function Signup({ onSignup, labels = {}, defaultRole = "RIDER" }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
-  const [role, setRole] = useState(defaultRole === "DRIVER" ? "DRIVER" : "RIDER");
+  const [role, setRole] = useState(normalizeDefaultRole(defaultRole));
   const [error, setError] = useState("");
+  const [errorTone, setErrorTone] = useState("error");
   const [success, setSuccess] = useState("");
+  const [devOtpHint, setDevOtpHint] = useState("");
   const [loading, setLoading] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpRequested, setOtpRequested] = useState(false);
@@ -25,8 +75,9 @@ export default function Signup({ onSignup, labels = {}, defaultRole = "RIDER" })
     otpRequestValidation: "Enter your name and email before requesting OTP.",
     otpSentSuccess: "OTP sent. Check your email and enter the code.",
     role: "Role",
-    rider: "Rider",
+    rider: "Passenger",
     driver: "Driver",
+    admin: "Admin",
     signupSuccess: "Signup successful. Please login.",
     createAccountAction: "Create account",
     createAccountLoading: "Creating...",
@@ -34,18 +85,22 @@ export default function Signup({ onSignup, labels = {}, defaultRole = "RIDER" })
   };
   const roleCards = [
     { value: "RIDER", label: copy.rider, hint: "Request rides quickly" },
-    { value: "DRIVER", label: copy.driver, hint: "Accept trips and earn" },
+    { value: "DRIVER", label: copy.driver, hint: "Go online and accept rides" },
+    ...(publicAdminAccessEnabled ? [{ value: "ADMIN", label: copy.admin, hint: "Staff access and platform ops" }] : []),
   ];
 
   const handleRequestOtp = async () => {
     if (!name.trim() || !email.trim()) {
       setError(copy.otpRequestValidation);
+      setErrorTone("error");
       setSuccess("");
       return;
     }
 
     setError("");
+    setErrorTone("error");
     setSuccess("");
+    setDevOtpHint("");
     setOtpLoading(true);
     try {
       const payload = await apiRequest("/auth/signup/request-otp", "POST", {
@@ -54,8 +109,11 @@ export default function Signup({ onSignup, labels = {}, defaultRole = "RIDER" })
       });
       setOtpRequested(true);
       setSuccess(payload?.message || copy.otpSentSuccess);
+      setDevOtpHint(payload?.devOtp ? `Development OTP: ${payload.devOtp}` : "");
     } catch (requestError) {
-      setError(requestError.message || "Unable to send OTP.");
+      const nextError = normalizeSignupError(requestError.message || "Unable to send OTP.");
+      setError(nextError.text);
+      setErrorTone(nextError.tone);
     } finally {
       setOtpLoading(false);
     }
@@ -64,9 +122,11 @@ export default function Signup({ onSignup, labels = {}, defaultRole = "RIDER" })
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setErrorTone("error");
     setSuccess("");
     if (!otpRequested || !otp.trim()) {
       setError(copy.otpRequired);
+      setErrorTone("error");
       return;
     }
     setLoading(true);
@@ -79,18 +139,21 @@ export default function Signup({ onSignup, labels = {}, defaultRole = "RIDER" })
         role,
       });
       setSuccess(copy.signupSuccess);
+      setDevOtpHint("");
       setOtp("");
       setOtpRequested(false);
       onSignup?.();
     } catch (requestError) {
-      setError(requestError.message || "Unable to signup.");
+      const nextError = normalizeSignupError(requestError.message || "Unable to signup.");
+      setError(nextError.text);
+      setErrorTone(nextError.tone);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    setRole(defaultRole === "DRIVER" ? "DRIVER" : "RIDER");
+    setRole(normalizeDefaultRole(defaultRole));
   }, [defaultRole]);
 
   return (
@@ -171,8 +234,9 @@ export default function Signup({ onSignup, labels = {}, defaultRole = "RIDER" })
         />
       </div>
 
-      {error && <p className="auth-message auth-message--error">{error}</p>}
+      {error && <p className={`auth-message ${errorTone === "config" ? "auth-message--config" : "auth-message--error"}`}>{error}</p>}
       {success && <p className="auth-message auth-message--success">{success}</p>}
+      {devOtpHint && <p className="auth-message auth-message--warning">{devOtpHint}</p>}
 
       <button type="submit" className="auth-submit" disabled={loading}>
         {loading ? copy.createAccountLoading : copy.createAccountAction}
@@ -186,7 +250,7 @@ export default function Signup({ onSignup, labels = {}, defaultRole = "RIDER" })
             className={`auth-role-card ${role === item.value ? "auth-role-card--active" : ""}`}
             onClick={() => setRole(item.value)}
           >
-            <span className="auth-role-card__badge">{item.value === "RIDER" ? "R" : "D"}</span>
+            <span className="auth-role-card__badge">{getRoleBadge(item.value)}</span>
             <span className="auth-role-card__copy">
               <strong>{item.label}</strong>
               <small>{item.hint}</small>

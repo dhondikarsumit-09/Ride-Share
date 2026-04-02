@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Column;
+import jakarta.persistence.Transient;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -26,6 +27,19 @@ public class Ride {
 
     private String pickupLocation;
     private String dropLocation;
+    private Double pickupLat;
+    private Double pickupLon;
+    private Double dropLat;
+    private Double dropLon;
+    private String pickupPlusCode;
+    private String dropPlusCode;
+
+    @Column(length = 600)
+    private String pickupLandmark;
+
+    @Column(length = 600)
+    private String dropLandmark;
+
     private Double fare;
 
     private Long driverId;
@@ -59,6 +73,12 @@ public class Ride {
 
     @Column(length = 600)
     private String driverFeedback;
+
+    @Transient
+    private String riderName;
+
+    @Transient
+    private String riderEmail;
 
     @Enumerated(EnumType.STRING)
     private Status status;

@@ -51,10 +51,15 @@ public class RideController {
     @GetMapping("/estimate")
     public ResponseEntity<?> estimateRide(
             @RequestParam("distanceKm") Double distanceKm,
-            @RequestParam(value = "rideType", required = false) String rideType
+            @RequestParam(value = "rideType", required = false) String rideType,
+            @RequestParam(value = "pickupLat", required = false) Double pickupLat,
+            @RequestParam(value = "pickupLon", required = false) Double pickupLon,
+            @RequestParam(value = "dropLat", required = false) Double dropLat,
+            @RequestParam(value = "dropLon", required = false) Double dropLon,
+            @RequestParam(value = "routePreference", required = false) String routePreference
     ) {
         try {
-            return ResponseEntity.ok(rideService.estimateRide(distanceKm, rideType));
+            return ResponseEntity.ok(rideService.estimateRide(distanceKm, rideType, pickupLat, pickupLon, dropLat, dropLon, routePreference));
         } catch (IllegalArgumentException estimateError) {
             return ResponseEntity.badRequest().body(estimateError.getMessage());
         }

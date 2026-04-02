@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import gsap from "gsap";
 import heroImage from "./assets/1.png";
 import safetyImage from "./assets/2.png";
 import Login from "./Login";
@@ -7,8 +8,9 @@ import Signup from "./Signup";
 import LiveMapPanel from "./components/LiveMapPanel";
 import NotificationCenter from "./components/NotificationCenter";
 import ThreeBackdrop from "./components/ThreeBackdrop";
+import AdminDashboard from "./pages/AdminDashboard";
 import DriverDashboard from "./pages/DriverDashboard";
-import RiderDashboard from "./pages/RiderDashboard";
+import UserDashboard from "./pages/UserDashboard";
 import { apiRequest } from "./api";
 
 const MotionAside = motion.aside;
@@ -20,6 +22,7 @@ const INITIAL_SESSION = {
   name: "",
   role: "",
   userId: "",
+  email: "",
 };
 
 const DEFAULT_PREFERENCES = {
@@ -205,7 +208,7 @@ const TRANSLATIONS = {
       loginTab: "Login",
       signupTab: "Sign up",
       loginSubtitle: "Enter your credentials",
-      signupSubtitle: "Create your rider or driver profile",
+      signupSubtitle: "Create your passenger, driver, or admin profile",
       switchToSignupPrompt: "Don't have an account?",
       switchToLoginPrompt: "Already have an account?",
       switchToSignupAction: "Sign Up",
@@ -214,7 +217,8 @@ const TRANSLATIONS = {
       email: "Email",
       password: "Password",
       role: "Role",
-      rider: "Rider",
+      rider: "Passenger",
+      user: "Passenger",
       driver: "Driver",
       locationPermission: "Ask for live location access",
       useLocationNow: "Use live location now",
@@ -281,7 +285,7 @@ const TRANSLATIONS = {
       safetyBody:
         "Driver verification, ride history trails, and always-visible ride state keep both sides informed.",
       rolesTitle: "Built for both roles",
-      riderModeTitle: "Rider mode",
+      riderModeTitle: "Passenger mode",
       riderModeBody: "Book quickly, watch real-time status, and review complete trip history.",
       driverModeTitle: "Driver mode",
       driverModeBody: "Accept demand, update ride milestones, and monitor personal earnings.",
@@ -341,7 +345,7 @@ const TRANSLATIONS = {
       email: "ईमेल",
       password: "पासवर्ड",
       role: "रोल",
-      rider: "राइडर",
+      rider: "यात्री",
       driver: "ड्राइवर",
       locationPermission: "लाइव लोकेशन एक्सेस पूछें",
       useLocationNow: "अभी लाइव लोकेशन लें",
@@ -383,7 +387,7 @@ const TRANSLATIONS = {
       safetyBody:
         "ड्राइवर वेरिफिकेशन, राइड हिस्ट्री और साफ़ स्टेटस दोनों पक्षों को हमेशा जानकारी में रखते हैं।",
       rolesTitle: "दोनों रोल के लिए बना",
-      riderModeTitle: "राइडर मोड",
+      riderModeTitle: "यात्री मोड",
       riderModeBody: "जल्दी बुक करें, लाइव स्टेटस देखें और पूरी राइड हिस्ट्री पाएं।",
       driverModeTitle: "ड्राइवर मोड",
       driverModeBody: "डिमांड एक्सेप्ट करें, स्टेटस अपडेट करें और कमाई ट्रैक करें।",
@@ -408,7 +412,34 @@ function getStoredSession() {
     name: localStorage.getItem("name") || "",
     role: (localStorage.getItem("role") || "").toUpperCase(),
     userId: localStorage.getItem("userId") || "",
+    email: localStorage.getItem("email") || "",
   };
+}
+
+function getDefaultPageForRole(role) {
+  if (role === "ADMIN") {
+    return "admin";
+  }
+  if (role === "DRIVER") {
+    return "driver";
+  }
+  if (role === "RIDER" || role === "USER") {
+    return "user";
+  }
+  return "home";
+}
+
+function isPageAllowedForRole(page, role) {
+  if (role === "ADMIN") {
+    return page === "admin";
+  }
+  if (role === "RIDER" || role === "USER") {
+    return page === "user";
+  }
+  if (role === "DRIVER") {
+    return page === "driver";
+  }
+  return page === "home";
 }
 
 function normalizeLanguageCode(languageCode) {
@@ -467,9 +498,11 @@ function clearSessionStorage() {
   localStorage.removeItem("name");
   localStorage.removeItem("role");
   localStorage.removeItem("userId");
+  localStorage.removeItem("email");
 }
 
 function HomeLanding({ onOpenAuth, copy }) {
+  const heroRef = useRef(null);
   const [pickup, setPickup] = useState("");
   const [drop, setDrop] = useState("");
   const [distanceKm, setDistanceKm] = useState("8");
@@ -596,11 +629,12 @@ function HomeLanding({ onOpenAuth, copy }) {
     pickup.trim() && drop.trim() ? `${pickup.trim()} to ${drop.trim()}` : "Kharadi to Viman Nagar";
   const stats = Array.isArray(copy.highlights) ? copy.highlights : [];
   const steps = Array.isArray(copy.steps) ? copy.steps : [];
-  const signalCards = [
-    {
-      label: "Dispatch pulse",
-      value: estimatedTrip.etaText,
-      detail: "Current arrival band",
+  const heroChips = [text.quickEstimatorTitle, "Responsive live dispatch", "Premium web dashboard"];
+    const signalCards = [
+      {
+        label: "Dispatch pulse",
+        value: estimatedTrip.etaText,
+        detail: "Current arrival band",
     },
     {
       label: "Fare window",
@@ -610,59 +644,243 @@ function HomeLanding({ onOpenAuth, copy }) {
     {
       label: "Trip mode",
       value: vehicle.toUpperCase(),
-      detail: "Switch vehicle instantly",
-    },
-  ];
+        detail: "Switch vehicle instantly",
+      },
+    ];
 
-  return (
-    <section className="space-y-8">
-      <div className="landing-stage landing-stage--wide" data-reveal>
-        <p className="eyebrow-chip">{copy.badge}</p>
-        <div className="hero-billboard mt-7" data-reveal>
-          <div className="hero-billboard__frame">
-            <div className="hero-billboard__meta">
-              <span className="hero-billboard__meta-chip">Urban mobility</span>
-              <span className="hero-billboard__meta-line" />
-            </div>
-            <div className="hero-billboard__brand">
-              <span className="hero-billboard__icon" aria-hidden="true">
-                <span className="hero-billboard__icon-dot hero-billboard__icon-dot--start" />
-                <span className="hero-billboard__icon-path" />
-                <span className="hero-billboard__icon-dot hero-billboard__icon-dot--end" />
-              </span>
-              <div>
-                <p className="hero-billboard__word">RIDESHARE</p>
-                <p className="hero-billboard__tagline">click. ride. arrive.</p>
+  useEffect(() => {
+    const root = heroRef.current;
+    if (!root) {
+      return undefined;
+    }
+
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        root.querySelectorAll("[data-home-hero-reveal]"),
+        { autoAlpha: 0, y: 26 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.7,
+          stagger: 0.08,
+          ease: "power3.out",
+        }
+      );
+
+      gsap.fromTo(
+        root.querySelectorAll("[data-home-hero-chip]"),
+        { autoAlpha: 0, y: 12, scale: 0.96 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.55,
+          stagger: 0.07,
+          delay: 0.15,
+          ease: "power2.out",
+        }
+      );
+
+      gsap.to(root.querySelectorAll("[data-home-hero-glow]"), {
+        xPercent: 5,
+        yPercent: -8,
+        repeat: -1,
+        yoyo: true,
+        duration: 4.6,
+        ease: "sine.inOut",
+        stagger: 0.3,
+      });
+    }, root);
+
+    return () => ctx.revert();
+  }, []);
+    const roleOptions = [
+      {
+        key: "RIDER",
+        eyebrow: "Rider access",
+        title: "Choose rider mode",
+        body: "Book quickly, track your trip live, and keep your travel history visible.",
+        primaryLabel: "Rider signup",
+        secondaryLabel: "Rider login",
+      },
+      {
+        key: "DRIVER",
+        eyebrow: "Driver access",
+        title: "Choose driver mode",
+        body: "Go online, accept requests, and manage active rides from one workspace.",
+        primaryLabel: "Driver signup",
+        secondaryLabel: "Driver login",
+      },
+    ];
+
+    return (
+      <section className="space-y-8" ref={heroRef}>
+      <div className="landing-stage landing-stage--wide landing-stage--hero" data-reveal>
+        <div data-home-hero-glow className="landing-hero-glow landing-hero-glow--amber" />
+        <div data-home-hero-glow className="landing-hero-glow landing-hero-glow--cyan" />
+        <p className="eyebrow-chip" data-home-hero-reveal>{copy.badge}</p>
+
+        <div className="landing-hero-grid mt-7">
+          <div className="space-y-6">
+            <div className="hero-billboard" data-home-hero-reveal>
+              <div className="hero-billboard__frame">
+                <div className="hero-billboard__meta">
+                  <span className="hero-billboard__meta-chip">Urban mobility</span>
+                  <span className="hero-billboard__meta-line" />
+                </div>
+                <div className="hero-billboard__brand">
+                  <span className="hero-billboard__icon" aria-hidden="true">
+                    <span className="hero-billboard__icon-dot hero-billboard__icon-dot--start" />
+                    <span className="hero-billboard__icon-path" />
+                    <span className="hero-billboard__icon-dot hero-billboard__icon-dot--end" />
+                  </span>
+                  <div>
+                    <p className="hero-billboard__word">RIDESHARE</p>
+                    <p className="hero-billboard__tagline">click. ride. arrive.</p>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <div className="hero-editorial" data-home-hero-reveal>
+              <h1 className="hero-editorial__title">
+                <span>{copy.heroTitleA}</span>
+                <span className="hero-editorial__accent">{copy.heroTitleB}</span>
+              </h1>
+              <p className="hero-editorial__body">{copy.heroBody}</p>
+            </div>
+
+            <div className="landing-hero-chip-row" data-home-hero-reveal>
+              {heroChips.map((chip) => (
+                <span key={chip} className="landing-hero-chip" data-home-hero-chip>
+                  {chip}
+                </span>
+              ))}
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-3" data-home-hero-reveal>
+              <button className="btn-primary shadow-[0_18px_34px_-18px_rgba(15,23,42,0.38)]" onClick={() => onOpenAuth("signup", "RIDER")}>
+                {text.heroBookRideCta}
+              </button>
+              <button className="btn-secondary" onClick={() => onOpenAuth("signup", "DRIVER")}>
+                {text.heroDriveEarnCta}
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" data-home-hero-reveal>
+              <button className="font-semibold text-slate-700 underline underline-offset-2" onClick={() => onOpenAuth("login")}>
+                {text.heroLoginCta}
+              </button>
+              <span className="text-slate-400">|</span>
+              <button className="font-semibold text-slate-700 underline underline-offset-2" onClick={() => onOpenAuth("signup")}>
+                {text.heroSignupCta}
+              </button>
+            </div>
+
+            <div className="landing-hero-stats" data-home-hero-reveal>
+              {stats.slice(0, 3).map((item) => (
+                <article key={item.label} className="landing-hero-stat">
+                  <strong>{item.value}</strong>
+                  <span>{item.label}</span>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="landing-hero-aside" data-home-hero-reveal>
+            <article className="landing-hero-spotlight">
+              <div className="landing-hero-spotlight__top">
+                <div>
+                  <p className="landing-hero-spotlight__eyebrow">Live booking pulse</p>
+                  <h2 className="landing-hero-spotlight__title">{routeLabel}</h2>
+                </div>
+                <span className="landing-hero-spotlight__badge">Real-time</span>
+              </div>
+              <div className="landing-hero-spotlight__metrics">
+                <article>
+                  <span>ETA</span>
+                  <strong>{estimatedTrip.etaText}</strong>
+                </article>
+                <article>
+                  <span>Fare</span>
+                  <strong>Rs {estimatedTrip.fareLow}-{estimatedTrip.fareHigh}</strong>
+                </article>
+                <article>
+                  <span>Mode</span>
+                  <strong>{vehicle.toUpperCase()}</strong>
+                </article>
+              </div>
+              <div className="landing-hero-spotlight__footer">
+                <span>Shortest path aware</span>
+                <span>Responsive web layout</span>
+              </div>
+            </article>
           </div>
         </div>
 
-        <div className="hero-editorial mt-10" data-reveal>
-          <h1 className="hero-editorial__title">
-            <span>{copy.heroTitleA}</span>
-            <span className="hero-editorial__accent">{copy.heroTitleB}</span>
-          </h1>
-          <p className="hero-editorial__body">{copy.heroBody}</p>
-        </div>
+      </div>
 
-        <div className="mt-8 flex flex-wrap gap-3" data-reveal>
-          <button className="btn-primary" onClick={() => onOpenAuth("signup", "RIDER")}>
-            {text.heroBookRideCta}
-          </button>
-          <button className="btn-secondary" onClick={() => onOpenAuth("signup", "DRIVER")}>
-            {text.heroDriveEarnCta}
-          </button>
-        </div>
+      <div className="landing-map-grid" data-reveal>
+        <LiveMapPanel
+          title={copy.mapTitle}
+          defaultCenter={{ lat: 21.774, lon: 78.257 }}
+          defaultZoom={6}
+          defaultLocationLabel="Multai, India"
+          className="landing-map-panel"
+          labels={{
+            searchPlaceholder: copy.mapSearchPlaceholder,
+            useMyLocation: copy.mapUseMyLocation,
+            recenter: copy.mapRecenter,
+            locateFailed: copy.mapLocateFailed,
+            searchFailed: copy.mapSearchFailed,
+            indiaOnly: copy.mapIndiaOnly,
+            yourLocation: copy.mapYourLocation,
+          }}
+        />
+        <aside className="glass-panel card-rise landing-map-side p-5 sm:p-6" data-reveal>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Map intelligence</p>
+          <h3 className="mt-3 text-2xl font-bold text-slate-900">Inspect the ride zone before signup</h3>
+          <p className="mt-3 text-sm text-slate-600">
+            Route context, street view, and local place discovery now sit higher in the page so coverage is obvious
+            before the rest of the product story.
+          </p>
+          <div className="mt-5 grid gap-3">
+            <div className="rounded-[1.35rem] border border-slate-200 bg-white/80 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Coverage</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">Cities, towns, and smaller nearby places inside India</p>
+            </div>
+            <div className="rounded-[1.35rem] border border-slate-200 bg-white/80 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Controls</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">Lighter map, street view, search, and recenter actions</p>
+            </div>
+          </div>
+        </aside>
+      </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" data-reveal>
-          <button className="font-semibold text-slate-700 underline underline-offset-2" onClick={() => onOpenAuth("login")}>
-            {text.heroLoginCta}
-          </button>
-          <span className="text-slate-400">|</span>
-          <button className="font-semibold text-slate-700 underline underline-offset-2" onClick={() => onOpenAuth("signup")}>
-            {text.heroSignupCta}
-          </button>
+      <div className="landing-role-shell glass-panel card-rise p-5 sm:p-6" data-reveal>
+        <div className="landing-role-shell__intro">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Access modes</p>
+          <h3 className="mt-3 text-2xl font-bold text-slate-900">Choose the workflow that matches how you use RideShare</h3>
+          <p className="mt-2 text-sm text-slate-600">
+            One cleaner split for booking on the user side and handling requests on the driver side.
+          </p>
+        </div>
+        <div className="role-gateway landing-role-shell__grid">
+          {roleOptions.map((option) => (
+            <article key={option.key} className="role-gateway__card">
+              <p className="role-gateway__eyebrow">{option.eyebrow}</p>
+              <h2 className="role-gateway__title">{option.title}</h2>
+              <p className="role-gateway__body">{option.body}</p>
+              <div className="role-gateway__actions">
+                <button className="btn-primary" onClick={() => onOpenAuth("signup", option.key)}>
+                  {option.primaryLabel}
+                </button>
+                <button className="btn-secondary" onClick={() => onOpenAuth("login", option.key)}>
+                  {option.secondaryLabel}
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
       </div>
 
@@ -681,7 +899,7 @@ function HomeLanding({ onOpenAuth, copy }) {
         <div className="route-sculpture route-sculpture--lower" data-reveal>
           <div className="route-sculpture__noise route-sculpture__noise--lower" />
           <div className="route-sculpture__card">
-            <p className="route-sculpture__eyebrow">Live dispatch</p>
+            <p className="route-sculpture__eyebrow">Dispatch board</p>
             <div className="route-sculpture__line">
               <span className="route-sculpture__dot route-sculpture__dot--start" />
               <span className="route-sculpture__trail" />
@@ -689,7 +907,7 @@ function HomeLanding({ onOpenAuth, copy }) {
             </div>
             <div className="mt-6 flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Active route</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Route preview</p>
                 <p className="mt-2 text-2xl font-bold leading-tight text-slate-900">{routeLabel}</p>
               </div>
               <div className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
@@ -712,26 +930,28 @@ function HomeLanding({ onOpenAuth, copy }) {
       </div>
 
       <div className="glass-panel card-rise signal-radar p-6 sm:p-8" data-reveal>
-        <div className="grid gap-6 lg:grid-cols-[0.9fr,1.1fr] lg:items-start">
+        <div className="grid gap-6 lg:grid-cols-[0.95fr,1.05fr] lg:items-start">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Hero signals</p>
-            <h3 className="mt-3 text-2xl font-bold text-slate-900">Fast readouts for riders and drivers</h3>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">How it works</p>
+            <h3 className="mt-3 text-2xl font-bold text-slate-900">A faster flow from route choice to live ride tracking</h3>
             <p className="mt-2 text-sm text-slate-600">
-              The interface now behaves like an operations board: route state, cost window, and vehicle mode are visible at a glance.
+              Clear trip steps, calmer cards, and one stronger visual language make the booking journey easier to scan.
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            {stats.map((item) => (
-              <article
-                key={item.label}
-                className="metric-tile rounded-[1.4rem] border border-slate-200/80 bg-white/78 p-4 shadow-sm"
-                data-reveal
-              >
-                <p className="metric-tile__value">{item.value}</p>
-                <p className="metric-tile__label">{item.label}</p>
-              </article>
-            ))}
+          <div className="signal-radar__summary" data-reveal>
+            <article className="signal-radar__summary-card">
+              <span>Ready in</span>
+              <strong>3 taps</strong>
+            </article>
+            <article className="signal-radar__summary-card">
+              <span>Pickup band</span>
+              <strong>{estimatedTrip.etaText}</strong>
+            </article>
+            <article className="signal-radar__summary-card">
+              <span>Fare window</span>
+              <strong>Rs {estimatedTrip.fareLow}-{estimatedTrip.fareHigh}</strong>
+            </article>
           </div>
         </div>
         <div className="mt-6 grid gap-4">
@@ -750,7 +970,7 @@ function HomeLanding({ onOpenAuth, copy }) {
         </div>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[1.2fr,0.8fr]">
+      <div className="grid gap-8 lg:grid-cols-[1.25fr,0.75fr]">
         <div className="glass-panel card-rise p-6 sm:p-8" data-reveal>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{text.quickEstimatorEyebrow}</p>
           <h3 className="mt-3 text-2xl font-bold text-slate-900">{text.quickEstimatorTitle}</h3>
@@ -916,12 +1136,226 @@ function HomeLanding({ onOpenAuth, copy }) {
         </div>
       </div>
 
-      <div data-reveal>
+    </section>
+  );
+}
+
+function MinimalHomeLanding({ onOpenAuth, copy }) {
+  const [distanceKm, setDistanceKm] = useState("8");
+  const [vehicle, setVehicle] = useState("mini");
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimatedTrip, setEstimatedTrip] = useState({
+    distance: "8.0",
+    etaText: "15-20 min",
+    fareLow: 140,
+    fareHigh: 180,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const parsedDistance = Number(distanceKm);
+    if (!Number.isFinite(parsedDistance) || parsedDistance <= 0) {
+      return undefined;
+    }
+
+    const timer = setTimeout(async () => {
+      setEstimateLoading(true);
+      try {
+        const estimate = await apiRequest(
+          `/rides/estimate?distanceKm=${encodeURIComponent(parsedDistance.toFixed(2))}&rideType=${encodeURIComponent(vehicle)}`
+        );
+        const fareMin = Number(estimate?.fareMin);
+        const fareMax = Number(estimate?.fareMax);
+        const etaMin = Number(estimate?.etaMinMinutes);
+        const etaMax = Number(estimate?.etaMaxMinutes);
+        const apiDistance = Number(estimate?.distanceKm);
+
+        if (!cancelled && Number.isFinite(fareMin) && Number.isFinite(fareMax) && Number.isFinite(etaMin) && Number.isFinite(etaMax)) {
+          setEstimatedTrip({
+            distance: (Number.isFinite(apiDistance) ? apiDistance : parsedDistance).toFixed(1),
+            etaText: `${etaMin}-${etaMax} min`,
+            fareLow: Math.round(fareMin),
+            fareHigh: Math.round(fareMax),
+          });
+        }
+      } catch {
+        // Keep current estimate when backend is unavailable.
+      } finally {
+        if (!cancelled) {
+          setEstimateLoading(false);
+        }
+      }
+    }, 240);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [distanceKm, vehicle]);
+
+  const stats = Array.isArray(copy.highlights) ? copy.highlights.slice(0, 3) : [];
+  const steps = Array.isArray(copy.steps) ? copy.steps.slice(0, 3) : [];
+  const roles = [
+    {
+      key: "RIDER",
+      title: copy.riderModeTitle || "Rider mode",
+      body: copy.riderModeBody || "",
+      eyebrow: "Passenger",
+    },
+    {
+      key: "DRIVER",
+      title: copy.driverModeTitle || "Driver mode",
+      body: copy.driverModeBody || "",
+      eyebrow: "Captain",
+    },
+    {
+      key: "ADMIN",
+      title: "Admin mode",
+      body: "Review drivers, payouts, complaints, and live platform health.",
+      eyebrow: "Control",
+    },
+  ];
+
+  return (
+    <section className="landing-home space-y-8 lg:space-y-10">
+      <section className="landing-card landing-hero-shell card-rise overflow-hidden" data-reveal>
+        <div className="landing-hero-grid grid lg:grid-cols-[1.08fr,0.92fr]">
+          <div className="p-6 sm:p-8 lg:p-12">
+            <p className="landing-eyebrow">{copy.badge}</p>
+            <h1 className="landing-hero-title mt-4 max-w-2xl text-4xl font-bold leading-[0.95] sm:text-5xl lg:text-6xl">
+              <span className="block">{copy.heroTitleA}</span>
+              <span className="landing-hero-title__sub mt-3 block">{copy.heroTitleB}</span>
+            </h1>
+            <p className="landing-body mt-5 max-w-xl text-base leading-7 sm:text-lg">{copy.heroBody}</p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <button className="btn-primary" onClick={() => onOpenAuth("signup", "RIDER")}>
+                {copy.heroBookRideCta || "Book a Ride"}
+              </button>
+              <button className="btn-secondary" onClick={() => onOpenAuth("signup", "DRIVER")}>
+                {copy.heroDriveEarnCta || "Drive & Earn"}
+              </button>
+              <button className="btn-tertiary" onClick={() => onOpenAuth("login")}>
+                {copy.heroLoginCta || "Login"}
+              </button>
+            </div>
+
+            <div className="landing-stats mt-10 grid gap-3 sm:grid-cols-3">
+              {stats.map((item) => (
+                <article key={item.label} className="landing-stat-card">
+                  <p className="text-2xl font-bold text-slate-50">{item.value}</p>
+                  <p className="mt-1 text-sm text-slate-400">{item.label}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="landing-card-subtle border-t p-6 sm:p-8 lg:border-l lg:border-t-0 lg:p-12">
+            <div className="landing-estimator rounded-[1.75rem] p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="landing-eyebrow">{copy.quickEstimatorEyebrow || "Ride estimator"}</p>
+                  <h2 className="mt-2 text-2xl font-bold text-slate-50">{copy.quickEstimatorTitle || "Quick fare and ETA estimate"}</h2>
+                </div>
+                {estimateLoading ? <span className="landing-sync-tag">Syncing</span> : null}
+              </div>
+              <p className="landing-body mt-3 text-sm leading-6">{copy.quickEstimatorBody || "Enter a distance and get an instant estimate."}</p>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-[1fr,0.95fr]">
+                <input
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={distanceKm}
+                  onChange={(event) => setDistanceKm(event.target.value)}
+                  className="landing-input w-full rounded-2xl px-4 py-3 outline-none"
+                />
+                <select
+                  value={vehicle}
+                  onChange={(event) => setVehicle(event.target.value)}
+                  className="landing-input w-full rounded-2xl px-4 py-3 outline-none"
+                >
+                  <option value="bike">{copy.quickEstimatorBike || "Bike"}</option>
+                  <option value="mini">{copy.quickEstimatorMini || "Mini"}</option>
+                  <option value="sedan">{copy.quickEstimatorSedan || "Sedan"}</option>
+                </select>
+              </div>
+
+              <div className="landing-estimator__summary mt-6 rounded-[1.5rem] px-5 py-5 text-white">
+                <p className="text-sm text-slate-300">{estimatedTrip.distance} km route preview</p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{copy.quickEstimatorEtaLabel || "Estimated arrival"}</p>
+                    <p className="mt-2 text-2xl font-bold">{estimatedTrip.etaText}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{copy.quickEstimatorFareLabel || "Estimated fare"}</p>
+                    <p className="mt-2 text-2xl font-bold">Rs {estimatedTrip.fareLow}-{estimatedTrip.fareHigh}</p>
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-4 text-xs leading-5 text-slate-500/90">{copy.quickEstimatorHint || "Actual fare may vary with traffic, tolls, and surge."}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[0.8fr,1.2fr]" data-reveal>
+        <div className="landing-card landing-section-card p-6 sm:p-8">
+          <p className="landing-eyebrow">How it works</p>
+          <div className="mt-5 space-y-3">
+            {steps.map((step, index) => (
+              <article key={step.title} className="signal-step landing-step-card">
+                <div className="signal-step__index">0{index + 1}</div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-50">{step.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-400">{step.detail}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="landing-card landing-media-card overflow-hidden">
+          <img src={heroImage} alt="RideShare booking preview" className="h-64 w-full object-cover sm:h-80" />
+          <div className="grid gap-4 border-t border-slate-800/70 p-6 sm:grid-cols-2 sm:p-8">
+            <article className="landing-editorial-card">
+              <p className="landing-eyebrow">{copy.appDemoRideTitle || "Booking and match"}</p>
+              <p className="mt-3 text-sm leading-6 text-slate-400">{copy.appDemoRideBody || "Pick route, confirm, and get matched with a nearby driver."}</p>
+            </article>
+            <article className="landing-editorial-card">
+              <p className="landing-eyebrow">{copy.appDemoSafetyTitle || "Live ride confidence"}</p>
+              <p className="mt-3 text-sm leading-6 text-slate-400">{copy.appDemoSafetyBody || "Track route and ride status updates in real time."}</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-role-grid grid gap-6 lg:grid-cols-3" data-reveal>
+        {roles.map((role) => (
+          <article key={role.key} className={`landing-card landing-role-card landing-role-card--${role.key.toLowerCase()} p-6 sm:p-8`}>
+            <div className="flex items-center justify-between gap-4">
+              <p className="landing-eyebrow">{role.eyebrow}</p>
+              <span className="landing-role-chip">{role.key}</span>
+            </div>
+            <h2 className="mt-4 text-2xl font-bold text-slate-50">{role.title}</h2>
+            <p className="mt-3 text-sm leading-7 text-slate-400">{role.body}</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button className="btn-primary" onClick={() => onOpenAuth("signup", role.key)}>Create account</button>
+              <button className="btn-secondary" onClick={() => onOpenAuth("login", role.key)}>Login</button>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="landing-map-grid grid gap-6 lg:grid-cols-[1.08fr,0.92fr]" data-reveal>
         <LiveMapPanel
           title={copy.mapTitle}
           defaultCenter={{ lat: 21.774, lon: 78.257 }}
           defaultZoom={6}
           defaultLocationLabel="Multai, India"
+          className="landing-map-panel"
           labels={{
             searchPlaceholder: copy.mapSearchPlaceholder,
             useMyLocation: copy.mapUseMyLocation,
@@ -932,7 +1366,15 @@ function HomeLanding({ onOpenAuth, copy }) {
             yourLocation: copy.mapYourLocation,
           }}
         />
-      </div>
+        <div className="landing-card landing-media-card overflow-hidden">
+          <img src={safetyImage} alt="RideShare live tracking preview" className="h-64 w-full object-cover" />
+          <div className="p-6 sm:p-8">
+            <p className="landing-eyebrow">{copy.rolesTitle}</p>
+            <h3 className="mt-3 text-2xl font-bold text-slate-50">{copy.safetyTitle}</h3>
+            <p className="mt-3 text-sm leading-7 text-slate-400">{copy.safetyBody}</p>
+          </div>
+        </div>
+      </section>
     </section>
   );
 }
@@ -951,21 +1393,14 @@ export default function App() {
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [preferences, setPreferences] = useState(getStoredPreferences);
   const [advancedSettings, setAdvancedSettings] = useState(getStoredAdvancedSettings);
+  const [activeDashboardPage, setActiveDashboardPage] = useState(() => getDefaultPageForRole(getStoredSession().role));
   const [websiteLanguageOptions, setWebsiteLanguageOptions] = useState(() => [
     ...FALLBACK_TRANSLATION_LANGUAGE_OPTIONS,
   ]);
   const [settingsNotice, setSettingsNotice] = useState("");
   const [userSettingsPrefix, setUserSettingsPrefix] = useState("");
 
-  const currentPage = useMemo(() => {
-    if (session.role === "RIDER") {
-      return "rider";
-    }
-    if (session.role === "DRIVER") {
-      return "driver";
-    }
-    return "home";
-  }, [session.role]);
+  const currentPage = session.token ? activeDashboardPage : "home";
   const dictionary = TRANSLATIONS[preferences.language] || TRANSLATIONS.en;
   const revealKey = `${currentPage}|${showAuth}|${showSettings}|${preferences.theme}`;
   useRevealItems(appRef, revealKey);
@@ -1066,6 +1501,19 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.page = currentPage;
   }, [currentPage]);
+
+  useEffect(() => {
+    if (!session.token) {
+      if (activeDashboardPage !== "home") {
+        setActiveDashboardPage("home");
+      }
+      return;
+    }
+
+    if (!isPageAllowedForRole(activeDashboardPage, session.role)) {
+      setActiveDashboardPage(getDefaultPageForRole(session.role));
+    }
+  }, [activeDashboardPage, session.role, session.token]);
 
   useEffect(() => {
     localStorage.setItem("advancedSettings", JSON.stringify(sanitizeAdvancedSettings(advancedSettings)));
@@ -1287,7 +1735,13 @@ export default function App() {
   useEffect(() => {
     const handleSessionExpired = () => {
       setSession(INITIAL_SESSION);
-      setPreferredRole(session.role === "DRIVER" ? "DRIVER" : "RIDER");
+      setPreferredRole(
+        session.role === "ADMIN"
+          ? "ADMIN"
+          : session.role === "DRIVER"
+            ? "DRIVER"
+            : "RIDER"
+      );
       setAuthMode("login");
       setShowAuth(true);
       setShowSettings(false);
@@ -1301,7 +1755,13 @@ export default function App() {
   }, [session.role]);
 
   const openAuthModal = (mode = "login", role = "RIDER") => {
-    setPreferredRole(role === "DRIVER" ? "DRIVER" : "RIDER");
+    setPreferredRole(
+      role === "ADMIN"
+        ? "ADMIN"
+        : role === "DRIVER"
+          ? "DRIVER"
+          : "RIDER"
+    );
     setAuthMode(mode);
     setShowAuth(true);
     setShowHeaderMenu(false);
@@ -1312,12 +1772,15 @@ export default function App() {
   };
 
   const handleLogin = (data) => {
-    setSession({
+    const nextSession = {
       token: data?.token || localStorage.getItem("token") || "",
       name: data?.name || localStorage.getItem("name") || "",
       role: (data?.role || localStorage.getItem("role") || "").toUpperCase(),
       userId: String(data?.id || localStorage.getItem("userId") || ""),
-    });
+      email: data?.email || localStorage.getItem("email") || "",
+    };
+    setSession(nextSession);
+    setActiveDashboardPage(getDefaultPageForRole(nextSession.role));
     setShowAuth(false);
   };
 
@@ -1334,6 +1797,7 @@ export default function App() {
     setShowAuth(false);
     setShowSettings(false);
     setShowHeaderMenu(false);
+    setActiveDashboardPage("home");
   };
 
   const handleBrandClick = () => {
@@ -1344,6 +1808,13 @@ export default function App() {
     setShowHeaderMenu(false);
     window.location.reload();
   };
+
+  const dashboardTabs =
+    session.role === "ADMIN"
+      ? [{ key: "admin", label: "Admin workspace" }]
+      : session.role === "DRIVER"
+        ? [{ key: "driver", label: "Driver workspace" }]
+        : [];
 
   const changeLanguage = (event) => {
     setPreferences((previous) => ({
@@ -1367,9 +1838,20 @@ export default function App() {
   };
 
   const isDarkTheme = preferences.theme === "dark-theme";
+  const isOpsPage = currentPage === "driver" || currentPage === "admin";
+  const isOpsDark = isOpsPage && isDarkTheme;
 
   return (
-    <div className="mesh-bg min-h-screen text-slate-900" ref={appRef}>
+    <div
+      className={`${
+        isOpsPage
+          ? isOpsDark
+            ? "min-h-screen bg-slate-950 text-slate-100"
+            : "min-h-screen bg-slate-50 text-slate-900"
+          : `${isDarkTheme ? "landing-shell-dark text-slate-100" : "landing-shell-light text-slate-900"} mesh-bg min-h-screen`
+      }`}
+      ref={appRef}
+    >
       <div
         id="google_translate_element"
         aria-hidden="true"
@@ -1377,8 +1859,19 @@ export default function App() {
       />
       {currentPage === "home" ? <ThreeBackdrop theme={preferences.theme} /> : null}
       <div className="app-shell">
-        <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur" data-reveal="instant">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-10">
+        <header
+          className={`sticky top-0 z-40 border-b backdrop-blur ${
+            isOpsDark
+              ? "border-slate-800/90 bg-slate-950/92"
+              : isOpsPage
+                ? "border-slate-200/80 bg-white/88"
+              : isDarkTheme
+                ? "border-slate-800/60 bg-slate-950/70"
+                : "border-slate-200/70 bg-white/80"
+          }`}
+          data-reveal="instant"
+        >
+          <div className={`mx-auto flex w-full items-center justify-between px-4 py-4 sm:px-6 ${isOpsPage ? "max-w-[96rem] xl:px-8" : "max-w-7xl lg:px-10"}`}>
             <button type="button" className="text-left brand-mark" onClick={handleBrandClick}>
               <span className="brand-mark__icon" aria-hidden="true">
                 <span className="brand-mark__icon-dot brand-mark__icon-dot--start" />
@@ -1490,6 +1983,35 @@ export default function App() {
           </div>
         </header>
 
+        {session.token && dashboardTabs.length > 0 ? (
+          <div className={`border-b backdrop-blur ${isOpsDark ? "border-slate-800/90 bg-slate-950/88" : "border-slate-200/70 bg-white/70"}`}>
+            <div className={`mx-auto flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 ${isOpsPage ? "max-w-[96rem] xl:px-8" : "max-w-7xl lg:px-10"}`}>
+              <div>
+                <p className={`text-xs font-semibold uppercase tracking-[0.24em] ${isOpsDark ? "text-slate-400" : "text-slate-500"}`}>Workspace</p>
+                <p className={`text-sm ${isOpsDark ? "text-slate-300" : "text-slate-600"}`}>
+                  {session.role === "ADMIN"
+                    ? "Platform controls, approvals, and live analytics"
+                    : session.role === "DRIVER"
+                    ? "Driver tools and live operations"
+                    : "Your booking dashboard and account workspace"}
+                </p>
+              </div>
+              <div className="dashboard-switcher">
+                {dashboardTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`dashboard-switcher__pill ${activeDashboardPage === tab.key ? "dashboard-switcher__pill--active" : ""}`}
+                    onClick={() => setActiveDashboardPage(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <AnimatePresence>
           {showSettings ? (
             <MotionAside
@@ -1580,7 +2102,11 @@ export default function App() {
         </AnimatePresence>
 
         <div ref={scrollContainerRef} data-scroll-container>
-          <main className="mx-auto w-full max-w-7xl px-4 pb-16 pt-8 sm:px-6 lg:px-10" data-reveal="instant" data-scroll-section>
+          <main
+            className={`mx-auto w-full pb-16 pt-8 ${isOpsPage ? "max-w-none px-0" : "max-w-7xl px-4 sm:px-6 lg:px-10"}`}
+            data-reveal="instant"
+            data-scroll-section
+          >
             <AnimatePresence mode="wait" initial={false}>
               <MotionDiv
                 key={currentPage}
@@ -1590,20 +2116,32 @@ export default function App() {
                 exit={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: -10 }}
                 transition={reduceMotion ? { duration: 0 } : { duration: 0.22, ease: PAGE_SWITCH_EASE }}
               >
-                {currentPage === "home" && <HomeLanding onOpenAuth={openAuthModal} copy={dictionary.home} />}
-                {currentPage === "rider" && <RiderDashboard />}
+                {currentPage === "home" && <MinimalHomeLanding onOpenAuth={openAuthModal} copy={dictionary.home} />}
+                {currentPage === "user" && (
+                  <UserDashboard
+                    session={session}
+                    advancedSettings={advancedSettings}
+                  />
+                )}
                 {currentPage === "driver" && <DriverDashboard />}
+                {currentPage === "admin" && <AdminDashboard token={session.token} adminName={session.name} />}
               </MotionDiv>
             </AnimatePresence>
           </main>
 
-          <footer
-            className="border-t border-slate-200/70 bg-white/75 py-5 text-center text-sm text-slate-600"
-            data-reveal="instant"
-            data-scroll-section
-          >
-            {dictionary.footer.copyright}
-          </footer>
+          {!isOpsPage ? (
+            <footer
+              className={`py-5 text-center text-sm ${
+                isDarkTheme
+                  ? "border-t border-slate-800/60 bg-slate-950/70 text-slate-400"
+                  : "border-t border-slate-200/70 bg-white/75 text-slate-600"
+              }`}
+              data-reveal="instant"
+              data-scroll-section
+            >
+              {dictionary.footer.copyright}
+            </footer>
+          ) : null}
         </div>
 
         <AnimatePresence>

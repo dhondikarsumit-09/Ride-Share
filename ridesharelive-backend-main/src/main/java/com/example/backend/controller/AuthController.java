@@ -68,6 +68,7 @@ public class AuthController {
                 Map.of(
                         "message", result.message(),
                         "emailSent", result.emailSent(),
+                        "devOtp", result.devOtp() == null ? "" : result.devOtp(),
                         "expiresAt", result.expiresAt() == null ? "" : result.expiresAt().toString()
                 )
         );
@@ -95,8 +96,12 @@ public class AuthController {
                 .password(request.getPassword())
                 .role(request.getRole())
                 .build();
-        userService.registerUser(user);
-        return ResponseEntity.ok(Map.of("message", "Account created/updated successfully."));
+        try {
+            userService.registerUser(user);
+            return ResponseEntity.ok(Map.of("message", "Account created/updated successfully."));
+        } catch (IllegalArgumentException signupError) {
+            return ResponseEntity.badRequest().body(Map.of("message", signupError.getMessage()));
+        }
     }
 
     @PostMapping("/login")
@@ -194,7 +199,7 @@ public class AuthController {
             return defaultRole;
         }
         String normalized = requestedRole.trim().toUpperCase(Locale.ROOT);
-        if ("RIDER".equals(normalized) || "DRIVER".equals(normalized)) {
+        if ("RIDER".equals(normalized) || "DRIVER".equals(normalized) || "USER".equals(normalized) || "ADMIN".equals(normalized)) {
             return normalized;
         }
         return defaultRole;

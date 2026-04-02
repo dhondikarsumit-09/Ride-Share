@@ -14,11 +14,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.example.backend.dto.payment.CreateCheckoutSessionRequest;
+import com.example.backend.dto.payment.CreatePaymentSessionRequest;
+import com.example.backend.dto.payment.VerifyPaymentRequest;
 import com.example.backend.entity.User;
 import com.example.backend.service.PaymentService;
 import com.example.backend.service.UserService;
-import com.stripe.exception.StripeException;
 
 @RestController
 @RequestMapping("/payments")
@@ -30,9 +30,9 @@ public class PaymentController {
     @Autowired
     private UserService userService;
 
-    @PostMapping("/checkout-session")
-    public ResponseEntity<?> createCheckoutSession(
-            @RequestBody CreateCheckoutSessionRequest request,
+    @PostMapping("/order")
+    public ResponseEntity<?> createPaymentOrder(
+            @RequestBody CreatePaymentSessionRequest request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
         if (request == null || request.getAmountInInr() == null || request.getAmountInInr() <= 0) {
@@ -41,7 +41,7 @@ public class PaymentController {
 
         User user = userService.findByEmail(userDetails.getUsername()).orElseThrow();
         try {
-            Map<String, Object> response = paymentService.createCheckoutSession(
+            Map<String, Object> response = paymentService.createPaymentSession(
                     request.getAmountInInr(),
                     request.getRideSummary(),
                     user.getId(),
@@ -52,21 +52,37 @@ public class PaymentController {
             return ResponseEntity.badRequest().body(validationError.getMessage());
         } catch (IllegalStateException configurationError) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(configurationError.getMessage());
-        } catch (StripeException stripeError) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body("Unable to start payment session.");
         }
     }
 
-    @GetMapping("/verify-session/{sessionId}")
-    public ResponseEntity<?> verifyCheckoutSession(@PathVariable String sessionId) {
+    @PostMapping("/verify")
+    public ResponseEntity<?> verifyPayment(@RequestBody VerifyPaymentRequest request) {
+        if (request == null) {
+            return ResponseEntity.badRequest().body("Payment verification payload is required.");
+        }
+
         try {
-            return ResponseEntity.ok(paymentService.verifyCheckoutSession(sessionId));
+            return ResponseEntity.ok(paymentService.verifyRazorpayPayment(
+                    request.getOrderId(),
+                    request.getPaymentId(),
+                    request.getSignature(),
+                    request.getPaymentMode()
+            ));
         } catch (IllegalArgumentException validationError) {
             return ResponseEntity.badRequest().body(validationError.getMessage());
         } catch (IllegalStateException configurationError) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(configurationError.getMessage());
-        } catch (StripeException stripeError) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body("Unable to verify payment session.");
+        }
+    }
+
+    @GetMapping("/session/{sessionId}")
+    public ResponseEntity<?> verifyPaymentSession(@PathVariable String sessionId) {
+        try {
+            return ResponseEntity.ok(paymentService.verifyPaymentSession(sessionId));
+        } catch (IllegalArgumentException validationError) {
+            return ResponseEntity.badRequest().body(validationError.getMessage());
+        } catch (IllegalStateException configurationError) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(configurationError.getMessage());
         }
     }
 }

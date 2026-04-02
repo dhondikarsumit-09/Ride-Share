@@ -35,6 +35,9 @@ public class NotificationService {
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
+    @Autowired
+    private AdminLiveUpdateService adminLiveUpdateService;
+
     public void notifyRideEvent(Ride ride) {
         if (ride == null || ride.getStatus() == null) {
             return;
@@ -54,6 +57,7 @@ public class NotificationService {
             dispatchOutboundMock(ride.getDriverId(), title, message, eventType, "EMAIL");
             dispatchOutboundMock(ride.getDriverId(), title, message, eventType, "SMS");
         }
+        adminLiveUpdateService.publishRideUpdate(ride);
     }
 
     public void sendRideOtpEmails(Ride ride) {

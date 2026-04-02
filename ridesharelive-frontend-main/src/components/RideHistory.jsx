@@ -1,45 +1,42 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiRequest } from "../api";
+import { useCallback, useEffect, useState } from "react";
+import { apiRequest } from "../api.jsx";
 import { formatPaymentModeLabel, paymentStatusMeta } from "../utils/paymentPresentation";
 
 function statusClasses(status) {
-  if (status === "COMPLETED") {
-    return "bg-emerald-100 text-emerald-700";
-  }
-  if (status === "CANCELLED") {
-    return "bg-rose-100 text-rose-700";
-  }
-  if (status === "PICKED") {
-    return "bg-amber-100 text-amber-700";
-  }
-  if (status === "ACCEPTED") {
-    return "bg-cyan-100 text-cyan-700";
-  }
+  if (status === "COMPLETED") return "bg-emerald-100 text-emerald-700";
+  if (status === "CANCELLED") return "bg-rose-100 text-rose-700";
+  if (status === "PICKED") return "bg-amber-100 text-amber-700";
+  if (status === "ACCEPTED") return "bg-cyan-100 text-cyan-700";
   return "bg-slate-200 text-slate-700";
 }
 
 function formatCurrency(value) {
-  return `INR ${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Number(value) || 0)}`;
+  return `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Number(value) || 0)}`;
+}
+
+function formatRideTime(ride) {
+  const raw = ride?.createdAt || ride?.bookedAt || ride?.requestedAt;
+  if (!raw) return "Recent";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "Recent";
+  return date.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function RideHistory({
-  rides,
+  rides = [],
   title = "Ride history",
   emptyMessage = "No rides found yet.",
   autoRefresh = true,
   intervalMs = 12000,
 }) {
   const hasExternalData = Array.isArray(rides);
-  const token = useMemo(() => localStorage.getItem("token") || "", []);
-
+  const token = localStorage.getItem("token") || "";
   const [localRides, setLocalRides] = useState([]);
   const [loading, setLoading] = useState(!hasExternalData);
   const [error, setError] = useState("");
 
   const fetchRides = useCallback(async () => {
-    if (hasExternalData || !token) {
-      return;
-    }
+    if (hasExternalData || !token) return;
 
     setLoading(true);
     setError("");
@@ -60,88 +57,77 @@ export default function RideHistory({
     }
 
     fetchRides();
-    if (!autoRefresh) {
-      return;
-    }
+    if (!autoRefresh) return;
 
     const timer = setInterval(fetchRides, intervalMs);
     return () => clearInterval(timer);
   }, [autoRefresh, fetchRides, hasExternalData, intervalMs]);
 
   const resolvedRides = hasExternalData ? rides : localRides;
-  const orderedRides = [...(resolvedRides || [])].sort((left, right) => (right.id || 0) - (left.id || 0));
-
-  if (loading) {
-    return (
-      <section className="glass-panel p-6">
-        <h2 className="text-xl font-bold text-slate-900">{title}</h2>
-        <p className="mt-3 text-sm text-slate-600">Loading ride history...</p>
-      </section>
-    );
-  }
-
-  if (error) {
-    return (
-      <section className="glass-panel p-6">
-        <h2 className="text-xl font-bold text-slate-900">{title}</h2>
-        <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-      </section>
-    );
-  }
+  const safeRides = Array.isArray(resolvedRides) ? resolvedRides : [];
+  const orderedRides = [...safeRides].sort((left, right) => {
+    const leftTime = new Date(left?.createdAt || left?.bookedAt || left?.requestedAt || 0).getTime();
+    const rightTime = new Date(right?.createdAt || right?.bookedAt || right?.requestedAt || 0).getTime();
+    return rightTime - leftTime;
+  });
 
   return (
-    <section className="glass-panel p-6 sm:p-8">
-      <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">{title}</h2>
-      {orderedRides.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-600">{emptyMessage}</p>
-      ) : (
-        <div className="mt-5 overflow-x-auto">
-          <table className="min-w-full border-separate border-spacing-y-2">
-            <thead>
-              <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2">Pickup</th>
-                <th className="px-3 py-2">Drop</th>
-                <th className="px-3 py-2">Fare</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Payment</th>
-                <th className="px-3 py-2">Payment status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orderedRides.map((ride, index) => {
-                const paymentMeta = paymentStatusMeta(ride.paymentStatus);
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-slate-950">{title}</h2>
+        {loading ? <p className="mt-2 text-sm text-slate-500">Loading activity...</p> : null}
+        {error ? <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p> : null}
+      </div>
 
-                return (
-                <tr key={ride.id || `${ride.pickupLocation}-${ride.dropLocation}-${index}`} className="rounded-2xl bg-white/80 shadow-sm">
-                  <td className="rounded-l-2xl px-3 py-3 text-sm font-semibold text-slate-800">{ride.pickupLocation || "-"}</td>
-                  <td className="px-3 py-3 text-sm font-semibold text-slate-800">{ride.dropLocation || "-"}</td>
-                  <td className="px-3 py-3 text-sm text-slate-700">{formatCurrency(ride.fare)}</td>
-                  <td className="px-3 py-3 text-sm">
-                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${statusClasses(ride.status)}`}>
-                      {ride.status || "UNKNOWN"}
-                    </span>
-                    {ride.status === "CANCELLED" && Number(ride.cancellationFee || 0) > 0 && (
-                      <p className="mt-1 text-xs font-semibold text-rose-700">
-                        Fee: {formatCurrency(ride.cancellationFee)}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-sm text-slate-700">
-                    <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-                      {formatPaymentModeLabel(ride.paymentMode)}
-                    </span>
-                  </td>
-                  <td className="rounded-r-2xl px-3 py-3 text-sm text-slate-700">
-                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${paymentMeta.className}`}>
-                      {paymentMeta.label}
-                    </span>
-                  </td>
-                </tr>
-              )})}
-            </tbody>
-          </table>
+      {!loading && !error && orderedRides.length === 0 ? (
+        <div className="rounded-[1.4rem] border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+          {emptyMessage}
         </div>
-      )}
+      ) : null}
+
+      <div className="space-y-3">
+        {orderedRides.map((ride, index) => {
+          const paymentMeta = paymentStatusMeta(ride?.paymentStatus);
+          const rideStatus = String(ride?.status || "UNKNOWN").toUpperCase();
+
+          return (
+            <article
+              key={ride?.id || `${ride?.pickupLocation || "pickup"}-${ride?.dropLocation || "drop"}-${index}`}
+              className="rounded-[1.4rem] border border-slate-200 bg-slate-50/80 p-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${statusClasses(rideStatus)}`}>
+                      {rideStatus}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500">{formatRideTime(ride)}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{ride?.pickupLocation || "-"}</p>
+                    <p className="mt-1 text-sm text-slate-500">{ride?.dropLocation || "-"}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-slate-950">{formatCurrency(ride?.fare)}</p>
+                  {rideStatus === "CANCELLED" && Number(ride?.cancellationFee || 0) > 0 ? (
+                    <p className="mt-1 text-xs font-semibold text-rose-700">Fee: {formatCurrency(ride.cancellationFee)}</p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                  {formatPaymentModeLabel(ride?.paymentMode)}
+                </span>
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${paymentMeta?.className || "bg-slate-200 text-slate-700"}`}>
+                  {paymentMeta?.label || "-"}
+                </span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
     </section>
   );
 }

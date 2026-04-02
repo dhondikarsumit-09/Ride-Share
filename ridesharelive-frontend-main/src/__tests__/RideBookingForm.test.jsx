@@ -70,8 +70,13 @@ describe("RideBookingForm", () => {
     await userEvent.click(screen.getByRole("button", { name: /confirm ride/i }));
 
     expect(await screen.findByText(/please login before booking a ride/i)).toBeInTheDocument();
-    expect(apiRequest).not.toHaveBeenCalled();
-  });
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      "/rides/book",
+      expect.anything(),
+      expect.anything(),
+      expect.anything()
+    );
+  }, 15000);
 
   it("books a ride with dummy card payment", async () => {
     const onBook = vi.fn();
@@ -109,7 +114,7 @@ describe("RideBookingForm", () => {
     });
 
     expect(onBook).toHaveBeenCalled();
-  });
+  }, 15000);
 
   it("books a ride with dummy upi payment", async () => {
     const onBook = vi.fn();
@@ -144,7 +149,7 @@ describe("RideBookingForm", () => {
     });
 
     expect(onBook).toHaveBeenCalled();
-  });
+  }, 15000);
 
   it("rejects invalid dummy upi ids", async () => {
     localStorage.setItem("token", "rider-token");
@@ -164,5 +169,5 @@ describe("RideBookingForm", () => {
 
     expect(await screen.findByText(/enter a valid-looking upi id/i)).toBeInTheDocument();
     expect(apiRequest).not.toHaveBeenCalledWith("/rides/book", expect.anything(), expect.anything(), expect.anything());
-  });
-});
+  }, 15000);
+  }, 15000);

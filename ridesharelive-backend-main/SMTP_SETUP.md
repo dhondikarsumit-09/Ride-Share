@@ -29,7 +29,7 @@ AUTH_SIGNUP_OTP_EXPOSE_DEV_OTP=false
 
 ## Where to set values
 
-- Docker compose run: set these values in `.env.aws` (or deployment environment).
+- Docker compose run: set these values in `.env.smtp.local` (or deployment environment).
 - Host-based backend run (`mvnw` / `scripts/run-postgres.ps1`): use host-resolvable values (for example `MAIL_HOST=localhost` when using Mailpit on host).
 - You can load a custom env file for host-based runs:
   `scripts/run-postgres.ps1 -EnvFile .env.smtp.local`

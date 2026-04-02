@@ -4,6 +4,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,9 @@ public class UserService {
     @Autowired
     PasswordEncoder passwordEncoder;
 
+    @Value("${app.auth.public-admin-signup-enabled:false}")
+    private boolean publicAdminSignupEnabled;
+
     private String normalizeEmail(String email) {
         if (email == null) {
             return "";
@@ -31,7 +35,7 @@ public class UserService {
             return "RIDER";
         }
         String normalized = role.trim().toUpperCase(Locale.ROOT);
-        if ("DRIVER".equals(normalized) || "RIDER".equals(normalized)) {
+        if ("DRIVER".equals(normalized) || "RIDER".equals(normalized) || "USER".equals(normalized) || "ADMIN".equals(normalized)) {
             return normalized;
         }
         return "RIDER";
@@ -40,12 +44,23 @@ public class UserService {
     public User registerUser(User user) {
         String normalizedEmail = normalizeEmail(user.getEmail());
         Optional<User> existing = userRepository.findByEmailIgnoreCase(normalizedEmail);
+        String normalizedRole = normalizeRole(user.getRole());
+
+        if ("ADMIN".equals(normalizedRole) && !publicAdminSignupEnabled) {
+            throw new IllegalArgumentException("Admin signup is disabled.");
+        }
 
         User target = existing.orElseGet(User::new);
         target.setName(user.getName());
         target.setEmail(normalizedEmail);
         target.setPassword(passwordEncoder.encode(user.getPassword()));
-        target.setRole(normalizeRole(user.getRole()));
+        target.setRole(normalizedRole);
+        if (target.getActive() == null) {
+            target.setActive(true);
+        }
+        if (target.getBlocked() == null) {
+            target.setBlocked(false);
+        }
 
         return userRepository.save(target);
     }

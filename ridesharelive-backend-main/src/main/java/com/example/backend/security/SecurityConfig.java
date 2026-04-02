@@ -49,7 +49,7 @@ public class SecurityConfig {
                 "/health",
                 "/api/status",
                 "/auth/**",
-                "/payments/verify-session/**",
+                "/payments/session/**",
                 "/ws/**",
                 "/ws-sockjs/**",
                 "/rides/estimate",
@@ -73,6 +73,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(publicPaths.toArray(String[]::new)).permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtfilter, UsernamePasswordAuthenticationFilter.class);
 

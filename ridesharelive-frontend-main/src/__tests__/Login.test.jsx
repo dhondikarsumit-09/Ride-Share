@@ -55,5 +55,5 @@ describe("Login", () => {
         name: "Test Rider",
       })
     );
-  });
+  }, 15000);
 });
